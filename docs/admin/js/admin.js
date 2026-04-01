@@ -558,6 +558,9 @@ function loadLeads(container) {
         html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + JSON.stringify(l) + ')\'>Edit</button>';
         if (l['Lead Status'] === 'Checkout Sent') {
           html += '<button class="btn btn-sm btn-primary" onclick=\'resendCheckout(' + l._rowNum + ')\'>Resend</button>';
+          if (l['Checkout Link']) {
+            html += '<button class="btn btn-sm btn-outline" onclick=\'copyCheckoutLink("' + esc(l['Checkout Link']) + '")\'>Copy Link</button>';
+          }
         }
         html += '</div></td>';
         html += '</tr>';
@@ -943,10 +946,10 @@ function addCustomerManual() {
         return showModalMessage('error', 'Failed: ' + (data ? data.message || data.error : err.message));
       }
       closeModal();
-      // Clear cache and reload
       delete cachedData['admin_customers'];
       delete cachedData['admin_dashboard'];
       delete cachedData['admin_installs'];
+      delete cachedData['admin_leads'];
       loadView('customers');
     });
   });
@@ -969,6 +972,15 @@ function editLead(lead) {
       delete cachedData['admin_leads'];
       loadView('leads');
     });
+  });
+}
+
+function copyCheckoutLink(url) {
+  navigator.clipboard.writeText(url).then(function() {
+    alert('Checkout link copied! Open it on any device for in-person payment.');
+  }).catch(function() {
+    // Fallback for older browsers
+    prompt('Copy this checkout link:', url);
   });
 }
 
