@@ -257,3 +257,62 @@ function sendSuspensionWarningEmail_(email, name, daysPastDue, portalUrl) {
     replyTo: propOr('CONTACT_EMAIL', '')
   });
 }
+
+// ── Service Suspension Email ───────────────────────────────
+
+/**
+ * Send notification that service has been suspended.
+ */
+function sendSuspensionNoticeEmail_(email, name) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var firstName = name.split(' ')[0];
+  var contactPhone = propOr('CONTACT_PHONE', '');
+  var contactEmail = propOr('CONTACT_EMAIL', '');
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#c0392b;">Service Suspended</h2>' +
+    '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+    '<div style="background-color:#fef2f2;border-left:4px solid #c0392b;padding:16px;margin:20px 0;border-radius:0 6px 6px 0;">' +
+    '<p style="margin:0;color:#7f1d1d;">Your ' + sanitize_(fromName) + ' internet service has been suspended due to non-payment.</p>' +
+    '</div>' +
+    '<p style="color:#374151;line-height:1.6;">To restore your service, please contact us to arrange payment:</p>' +
+    '<ul style="color:#374151;line-height:1.8;">' +
+    (contactEmail ? '<li>Email: ' + sanitize_(contactEmail) + '</li>' : '') +
+    (contactPhone ? '<li>Phone: ' + sanitize_(contactPhone) + '</li>' : '') +
+    '</ul>' +
+    '<p style="color:#374151;line-height:1.6;">Once payment is received, your service will be restored promptly.</p>';
+
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Your ' + fromName + ' service has been suspended',
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: propOr('CONTACT_EMAIL', '')
+  });
+}
+
+// ── Service Reactivation Email ─────────────────────────────
+
+/**
+ * Send notification that service has been restored.
+ */
+function sendReactivationEmail_(email, name) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var firstName = name.split(' ')[0];
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#27ae60;">Service Restored</h2>' +
+    '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+    '<div style="background-color:#f0fdf4;border-left:4px solid #27ae60;padding:16px;margin:20px 0;border-radius:0 6px 6px 0;">' +
+    '<p style="margin:0;color:#166534;">Your ' + sanitize_(fromName) + ' internet service has been restored. You should be back online now.</p>' +
+    '</div>' +
+    '<p style="color:#374151;line-height:1.6;">Thank you for resolving your account. If you experience any issues getting back online, please don\'t hesitate to contact us.</p>';
+
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Your ' + fromName + ' service has been restored',
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: propOr('CONTACT_EMAIL', '')
+  });
+}

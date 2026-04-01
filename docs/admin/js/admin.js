@@ -396,7 +396,7 @@ function loadCustomers(container, search) {
     html += '</div></div></div>';
 
     // Table
-    html += '<div class="panel"><div class="panel-header"><h2>Customers (' + data.total + ')</h2><button class="btn btn-sm btn-outline" onclick="exportCustomers()">Export CSV</button></div>';
+    html += '<div class="panel"><div class="panel-header"><h2>Customers (' + data.total + ')</h2><div class="btn-group"><button class="btn btn-sm btn-success" onclick="addCustomerManual()">+ New Customer</button><button class="btn btn-sm btn-outline" onclick="exportCustomers()">Export CSV</button></div></div>';
     // Store for export
     window._lastCustomers = data.customers;
     if (data.customers && data.customers.length > 0) {
@@ -444,6 +444,12 @@ function viewCustomer(custId) {
     html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
     html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
     html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + esc(c['Stripe Customer ID']) + '" target="_blank">Open in Stripe</a>';
+    var subStatus = c['Subscription Status'];
+    if (subStatus === 'active' || subStatus === 'past_due') {
+      html += '<button class="btn btn-sm btn-danger" onclick="suspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Suspend Service</button>';
+    } else if (subStatus === 'suspended') {
+      html += '<button class="btn btn-sm btn-success" onclick="unsuspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Restore Service</button>';
+    }
     html += '</div>';
 
     // Customer info
@@ -535,17 +541,25 @@ function loadLeads(container) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load leads.</p></div>';
       return;
     }
-    var html = '<div class="panel"><div class="panel-header"><h2>All Leads</h2></div>';
-    if (data.leads && data.leads.length > 0) {
+    // Filter out deleted leads
+    var visibleLeads = (data.leads || []).filter(function(l) { return l['Lead Status'] !== 'Deleted'; });
+    var html = '<div class="panel"><div class="panel-header"><h2>Leads (' + visibleLeads.length + ')</h2></div>';
+    if (visibleLeads.length > 0) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Date</th><th>Name</th><th>Email</th><th>Plan</th><th>Status</th></tr>';
-      data.leads.forEach(function(l) {
+      html += '<tr><th>Date</th><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th></th></tr>';
+      visibleLeads.forEach(function(l) {
         html += '<tr>';
         html += '<td>' + formatDate(l['Timestamp']) + '</td>';
         html += '<td>' + esc(l['Full Name']) + '</td>';
         html += '<td>' + esc(l['Email']) + '</td>';
         html += '<td>' + esc(l['Plan']) + '</td>';
         html += '<td>' + badge(l['Lead Status']) + '</td>';
+        html += '<td><div class="btn-group">';
+        html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + JSON.stringify(l) + ')\'>Edit</button>';
+        if (l['Lead Status'] === 'Checkout Sent') {
+          html += '<button class="btn btn-sm btn-primary" onclick=\'resendCheckout(' + l._rowNum + ')\'>Resend</button>';
+        }
+        html += '</div></td>';
         html += '</tr>';
       });
       html += '</table></div>';
@@ -880,6 +894,96 @@ function saveCustomerNotes(custId) {
 // ── CSV Export ──────────────────────────────────────────────
 
 function exportCustomers() { if (window._lastCustomers) exportToCSV(window._lastCustomers, 'customers.csv'); }
+
+// ── Suspend / Unsuspend ────────────────────────────────────
+
+function suspendCustomer(custId, name) {
+  if (!confirm('Suspend service for ' + name + '? This will pause their subscription and send them a notification email.')) return;
+  apiCall('admin_suspend_customer', { id: custId }, function(err, data) {
+    if (err || !data || !data.success) {
+      alert('Failed to suspend: ' + (data ? data.message || data.error : err.message));
+      return;
+    }
+    // Clear cache and reload customer detail
+    delete cachedData['admin_customers'];
+    delete cachedData['admin_dashboard'];
+    viewCustomer(custId);
+  });
+}
+
+function unsuspendCustomer(custId, name) {
+  if (!confirm('Restore service for ' + name + '? This will resume their subscription and send them a notification.')) return;
+  apiCall('admin_unsuspend_customer', { id: custId }, function(err, data) {
+    if (err || !data || !data.success) {
+      alert('Failed to restore: ' + (data ? data.message || data.error : err.message));
+      return;
+    }
+    delete cachedData['admin_customers'];
+    delete cachedData['admin_dashboard'];
+    viewCustomer(custId);
+  });
+}
+
+// ── Manual Customer Creation ───────────────────────────────
+
+function addCustomerManual() {
+  showModal('Add New Customer', [
+    { label: 'Full Name', key: 'full_name', type: 'text', value: '' },
+    { label: 'Email', key: 'email', type: 'text', value: '' },
+    { label: 'Phone', key: 'phone', type: 'text', value: '' },
+    { label: 'Service Address', key: 'address', type: 'text', value: '' },
+    { label: 'Plan', key: 'plan', type: 'select', value: '', options: ['Residential 50/10 Mbps', 'Residential 100/20 Mbps', 'Business 100/100 Mbps'] },
+    { label: 'Notes', key: 'notes', type: 'textarea', value: '' }
+  ], function(values) {
+    if (!values.full_name || !values.email || !values.plan) {
+      return showModalMessage('error', 'Name, email, and plan are required.');
+    }
+    apiCall('admin_create_customer', values, function(err, data) {
+      if (err || !data || !data.success) {
+        return showModalMessage('error', 'Failed: ' + (data ? data.message || data.error : err.message));
+      }
+      closeModal();
+      // Clear cache and reload
+      delete cachedData['admin_customers'];
+      delete cachedData['admin_dashboard'];
+      delete cachedData['admin_installs'];
+      loadView('customers');
+    });
+  });
+}
+
+// ── Lead Management ────────────────────────────────────────
+
+function editLead(lead) {
+  showModal('Edit Lead', [
+    { label: 'Name', type: 'static', value: lead['Full Name'] },
+    { label: 'Email', type: 'static', value: lead['Email'] },
+    { label: 'Plan', type: 'static', value: lead['Plan'] },
+    { label: 'Status', key: 'status', type: 'select', value: lead['Lead Status'], options: ['Checkout Sent', 'Contacted', 'No Response', 'Not Interested', 'Paid'] },
+    { label: 'Notes', key: 'notes', type: 'textarea', value: lead['Notes'] }
+  ], function(values) {
+    values.row = lead._rowNum;
+    apiCall('admin_update_lead', values, function(err, data) {
+      if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
+      closeModal();
+      delete cachedData['admin_leads'];
+      loadView('leads');
+    });
+  });
+}
+
+function resendCheckout(rowNum) {
+  if (!confirm('Resend the checkout link email to this lead? A new payment link will be generated.')) return;
+  apiCall('admin_resend_checkout', { row: rowNum }, function(err, data) {
+    if (err || !data || !data.success) {
+      alert('Failed to resend: ' + (data ? data.message || data.error : err.message));
+      return;
+    }
+    alert('Checkout link sent successfully.');
+    delete cachedData['admin_leads'];
+    loadView('leads');
+  });
+}
 
 function exportToCSV(data, filename) {
   if (!data || data.length === 0) return;

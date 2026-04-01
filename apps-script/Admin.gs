@@ -172,6 +172,24 @@ function handleAdminRequest_(e) {
     case 'admin_create_equipment':
       result = createEquipment_(e.parameter);
       break;
+    case 'admin_suspend_customer':
+      result = suspendCustomer_(e.parameter);
+      break;
+    case 'admin_unsuspend_customer':
+      result = unsuspendCustomer_(e.parameter);
+      break;
+    case 'admin_create_customer':
+      result = createCustomerManual_(e.parameter);
+      break;
+    case 'admin_update_lead':
+      result = updateLead_(e.parameter);
+      break;
+    case 'admin_resend_checkout':
+      result = resendCheckout_(e.parameter);
+      break;
+    case 'admin_delete_lead':
+      result = deleteLead_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -461,5 +479,282 @@ function createEquipment_(params) {
     params.notes || ''
   ];
   appendRow_(TAB_EQUIPMENT, row);
+  return { success: true };
+}
+
+// ── Suspend / Unsuspend ────────────────────────────────────
+
+/**
+ * Suspend a customer's subscription in Stripe and update the sheet.
+ */
+function suspendCustomer_(params) {
+  var custId = params.id || '';
+  if (!custId) return { error: 'missing_id' };
+
+  var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, custId);
+  if (!customerRow) return { error: 'not_found' };
+
+  var customerData = readRow_(TAB_CUSTOMERS, customerRow, CUSTOMERS_HEADERS.length);
+  var subId = customerData[C_.STRIPE_SUB_ID - 1];
+  var email = customerData[C_.EMAIL - 1];
+  var name = customerData[C_.FULL_NAME - 1];
+
+  if (!subId) return { error: 'no_subscription' };
+
+  // Pause the subscription in Stripe
+  try {
+    var secret = prop('STRIPE_SECRET_KEY');
+    var url = 'https://api.stripe.com/v1/subscriptions/' + subId;
+    UrlFetchApp.fetch(url, {
+      method: 'post',
+      headers: { 'Authorization': 'Bearer ' + secret },
+      payload: { 'pause_collection[behavior]': 'void' },
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    Logger.log('Stripe suspend error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+
+  // Update sheet
+  writeCell_(TAB_CUSTOMERS, customerRow, C_.SUB_STATUS, 'suspended');
+  writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_EVENT, 'admin_suspended');
+
+  // Send notification email
+  try {
+    sendSuspensionNoticeEmail_(email, name);
+  } catch (e) {
+    Logger.log('Suspension email failed: ' + e.message);
+  }
+
+  return { success: true };
+}
+
+/**
+ * Unsuspend a customer's subscription in Stripe and update the sheet.
+ */
+function unsuspendCustomer_(params) {
+  var custId = params.id || '';
+  if (!custId) return { error: 'missing_id' };
+
+  var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, custId);
+  if (!customerRow) return { error: 'not_found' };
+
+  var customerData = readRow_(TAB_CUSTOMERS, customerRow, CUSTOMERS_HEADERS.length);
+  var subId = customerData[C_.STRIPE_SUB_ID - 1];
+  var email = customerData[C_.EMAIL - 1];
+  var name = customerData[C_.FULL_NAME - 1];
+
+  if (!subId) return { error: 'no_subscription' };
+
+  // Resume the subscription in Stripe
+  try {
+    var secret = prop('STRIPE_SECRET_KEY');
+    var url = 'https://api.stripe.com/v1/subscriptions/' + subId;
+    UrlFetchApp.fetch(url, {
+      method: 'post',
+      headers: { 'Authorization': 'Bearer ' + secret },
+      payload: { 'pause_collection': '' },
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    Logger.log('Stripe unsuspend error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+
+  // Update sheet
+  writeCell_(TAB_CUSTOMERS, customerRow, C_.SUB_STATUS, 'active');
+  writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_EVENT, 'admin_unsuspended');
+
+  // Send notification email
+  try {
+    sendReactivationEmail_(email, name);
+  } catch (e) {
+    Logger.log('Reactivation email failed: ' + e.message);
+  }
+
+  return { success: true };
+}
+
+// ── Manual Customer Creation ───────────────────────────────
+
+/**
+ * Create a customer manually from the admin portal.
+ * Creates Stripe customer + subscription, adds to sheet.
+ */
+function createCustomerManual_(params) {
+  if (!params.full_name || !params.email || !params.plan) {
+    return { error: 'missing_fields', message: 'Name, email, and plan are required.' };
+  }
+
+  var email = String(params.email).trim().toLowerCase();
+  var fullName = String(params.full_name).trim();
+  var phone = String(params.phone || '').trim();
+  var address = String(params.address || '').trim();
+  var plan = String(params.plan).trim();
+  var notes = String(params.notes || '').trim();
+
+  // Create or find Stripe customer
+  var customer = createOrGetStripeCustomer_({
+    email: email,
+    name: fullName,
+    phone: phone,
+    address: { line1: address, city: 'Nenana', state: 'AK', zip: '' }
+  });
+
+  // Get price ID
+  var priceId = getPriceIdForPlan_(plan);
+
+  // Create subscription in Stripe
+  var secret = prop('STRIPE_SECRET_KEY');
+  var subResponse = UrlFetchApp.fetch('https://api.stripe.com/v1/subscriptions', {
+    method: 'post',
+    headers: { 'Authorization': 'Bearer ' + secret },
+    payload: {
+      'customer': customer.id,
+      'items[0][price]': priceId,
+      'collection_method': 'charge_automatically'
+    },
+    muteHttpExceptions: true
+  });
+
+  var subBody = JSON.parse(subResponse.getContentText());
+  if (subResponse.getResponseCode() >= 300) {
+    return { error: 'stripe_error', message: subBody.error ? subBody.error.message : 'Failed to create subscription' };
+  }
+
+  var rowKey = Utilities.getUuid();
+
+  // Get monthly price from Stripe response
+  var monthlyPrice = '';
+  try {
+    monthlyPrice = (subBody.items.data[0].price.unit_amount / 100).toFixed(2);
+  } catch (e) {}
+
+  // Generate portal link
+  var portalUrl = '';
+  try {
+    portalUrl = createPortalSession_(customer.id);
+  } catch (e) {}
+
+  // Add to Customers sheet
+  var customerRow = [
+    customer.id,
+    fullName,
+    email,
+    phone,
+    address,
+    plan,
+    subBody.id,
+    'active',
+    monthlyPrice,
+    portalUrl,
+    new Date(),
+    new Date(),
+    'admin_created',
+    rowKey,
+    notes
+  ];
+  appendRow_(TAB_CUSTOMERS, customerRow);
+
+  // Add to Installs sheet
+  var installRow = [
+    fullName,
+    email,
+    address,
+    plan,
+    '',
+    '',
+    '',
+    '',
+    'Pending',
+    '',
+    'Manually created by admin'
+  ];
+  appendRow_(TAB_INSTALLS, installRow);
+
+  // Send welcome email
+  try {
+    sendWelcomeEmail_(email, fullName, plan, portalUrl);
+  } catch (e) {
+    Logger.log('Welcome email failed: ' + e.message);
+  }
+
+  return { success: true, customerId: customer.id };
+}
+
+// ── Lead Management ────────────────────────────────────────
+
+/**
+ * Update a lead's status.
+ */
+function updateLead_(params) {
+  var rowNum = parseInt(params.row, 10);
+  if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
+
+  var sheet = getSheet_(TAB_LEADS);
+  if (params.status) sheet.getRange(rowNum, L.LEAD_STATUS).setValue(params.status);
+  if (params.hasOwnProperty('notes')) sheet.getRange(rowNum, L.NOTES).setValue(params.notes);
+
+  return { success: true };
+}
+
+/**
+ * Resend the checkout link email to a lead.
+ * If the original checkout link has expired, creates a new one.
+ */
+function resendCheckout_(params) {
+  var rowNum = parseInt(params.row, 10);
+  if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
+
+  var leadData = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+  var email = leadData[L.EMAIL - 1];
+  var name = leadData[L.FULL_NAME - 1];
+  var plan = leadData[L.PLAN - 1];
+  var custId = leadData[L.STRIPE_CUST_ID - 1];
+  var rowKey = leadData[L.ROW_KEY - 1];
+
+  if (!email || !custId) return { error: 'missing_data' };
+
+  // Create a new checkout session (old ones expire after 24h)
+  var priceId = getPriceIdForPlan_(plan);
+  var installFeePrice = propOr('INSTALL_FEE_PRICE', '');
+
+  var session = createCheckoutSession_({
+    customerId: custId,
+    priceId: priceId,
+    rowKey: rowKey,
+    email: email,
+    planName: plan,
+    installFeePrice: installFeePrice || null
+  });
+
+  // Update the checkout link in the sheet
+  var sheet = getSheet_(TAB_LEADS);
+  sheet.getRange(rowNum, L.CHECKOUT_LINK).setValue(session.url);
+  sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Checkout Sent');
+
+  // Generate portal link
+  var portalUrl = '';
+  try {
+    portalUrl = createPortalSession_(custId);
+  } catch (e) {}
+
+  // Send the email
+  sendCheckoutEmail_(email, name, session.url, portalUrl, plan);
+
+  return { success: true };
+}
+
+/**
+ * Delete (mark as deleted) a lead.
+ */
+function deleteLead_(params) {
+  var rowNum = parseInt(params.row, 10);
+  if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
+
+  var sheet = getSheet_(TAB_LEADS);
+  sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Deleted');
+
   return { success: true };
 }
