@@ -6,7 +6,7 @@
  */
 
 // ── Configuration ──────────────────────────────────────────
-var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbywAMVqrh0CdLEILWGJz62XVA8n-VWwcTWjGQ67ULV-PO143gEiqPfE3_q6Y3jUChud/exec';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZV3Gljv5z5-RrOpM9eo3jDfQ7L_5E9fJYiDmISXli__tX_NWeW4i3zoGRxC08Ykr_4g/exec';
 
 // ── Plan Selection ─────────────────────────────────────────
 
