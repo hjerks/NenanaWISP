@@ -250,6 +250,19 @@ function getDataAsObjects_(tabName) {
 function createCustomerFromLead_(leadRowNum, stripeSubId, subStatus) {
   var leadData = readRow_(TAB_LEADS, leadRowNum, LEADS_HEADERS.length);
 
+  // Look up the monthly price from Stripe
+  var monthlyPrice = '';
+  try {
+    if (stripeSubId) {
+      var sub = stripeGet_('/v1/subscriptions/' + stripeSubId);
+      if (sub && sub.items && sub.items.data && sub.items.data[0]) {
+        monthlyPrice = (sub.items.data[0].price.unit_amount / 100).toFixed(2);
+      }
+    }
+  } catch (e) {
+    Logger.log('Could not fetch subscription price: ' + e.message);
+  }
+
   var customerRow = [
     leadData[L.STRIPE_CUST_ID - 1],  // Stripe Customer ID
     leadData[L.FULL_NAME - 1],        // Full Name
@@ -259,7 +272,7 @@ function createCustomerFromLead_(leadRowNum, stripeSubId, subStatus) {
     leadData[L.PLAN - 1],             // Plan
     stripeSubId,                       // Stripe Subscription ID
     subStatus || 'active',             // Subscription Status
-    '',                                // Monthly Price (filled from Stripe or manually)
+    monthlyPrice,                      // Monthly Price (from Stripe)
     '',                                // Portal Link (generated separately)
     new Date(),                        // Signup Date
     new Date(),                        // Last Payment Date
