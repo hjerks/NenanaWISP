@@ -81,8 +81,10 @@ function showAuthError(msg) {
 
 // ── API Calls ──────────────────────────────────────────────
 
-function apiCall(action, params, callback) {
+function apiCall(action, params, callback, _retryCount) {
   if (!adminToken) { logout(); return; }
+  var retryCount = _retryCount || 0;
+  var maxRetries = 1;
 
   var url = APPS_SCRIPT_URL + '?action=' + action + '&token=' + encodeURIComponent(adminToken);
   if (params) {
@@ -93,13 +95,15 @@ function apiCall(action, params, callback) {
     }
   }
 
-  // Use AbortController for 30-second timeout
   var controller = new AbortController();
-  var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
+  var timeoutId = setTimeout(function() { controller.abort(); }, 25000);
 
   fetch(url, { signal: controller.signal, redirect: 'follow' })
     .then(function(res) {
       clearTimeout(timeoutId);
+      if (!res.ok && retryCount < maxRetries) {
+        throw new Error('HTTP ' + res.status);
+      }
       return res.text();
     })
     .then(function(text) {
@@ -110,22 +114,35 @@ function apiCall(action, params, callback) {
           showAuthError('Session expired. Please sign in again.');
           return;
         }
-        // Cache the result
         cachedData[action] = { data: data, time: Date.now() };
         callback(null, data);
       } catch (e) {
-        callback(new Error('Invalid response from server'), null);
+        // Non-JSON response (Google error page) -- retry
+        if (retryCount < maxRetries) {
+          console.log('Retrying ' + action + ' (non-JSON response)');
+          setTimeout(function() { apiCall(action, params, callback, retryCount + 1); }, 1500);
+        } else if (cachedData[action] && (Date.now() - cachedData[action].time < 300000)) {
+          callback(null, cachedData[action].data);
+        } else {
+          callback(new Error('Invalid response from server'), null);
+        }
       }
     })
     .catch(function(err) {
       clearTimeout(timeoutId);
-      // On timeout or error, try cached data
+      // Auto-retry once on any failure
+      if (retryCount < maxRetries) {
+        console.log('Retrying ' + action + ' (' + err.message + ')');
+        setTimeout(function() { apiCall(action, params, callback, retryCount + 1); }, 1500);
+        return;
+      }
+      // After retry, fall back to cache
       if (cachedData[action] && (Date.now() - cachedData[action].time < 300000)) {
         callback(null, cachedData[action].data);
         return;
       }
       if (err.name === 'AbortError') {
-        callback(new Error('Request timed out. Apps Script may be warming up -- try again in a few seconds.'), null);
+        callback(new Error('Request timed out. Try again in a few seconds.'), null);
       } else {
         callback(err, null);
       }
