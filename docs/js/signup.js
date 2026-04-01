@@ -6,7 +6,6 @@
  */
 
 // ── Configuration ──────────────────────────────────────────
-// Replace this with your deployed Apps Script web app URL after deployment
 var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbywAMVqrh0CdLEILWGJz62XVA8n-VWwcTWjGQ67ULV-PO143gEiqPfE3_q6Y3jUChud/exec';
 
 // ── Plan Selection ─────────────────────────────────────────
@@ -101,21 +100,14 @@ document.addEventListener('DOMContentLoaded', function() {
   var form = document.getElementById('signup-form');
   if (!form) return;
 
-  // Set the form action to the Apps Script URL
-  if (APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
-    form.action = APPS_SCRIPT_URL + '?source=signup_form';
-  }
-
   form.addEventListener('submit', function(e) {
-    // Validate before allowing submission
-    if (!validateForm()) {
-      e.preventDefault();
-      return;
-    }
+    e.preventDefault();
+
+    // Validate
+    if (!validateForm()) return;
 
     // Check if Apps Script URL is configured
     if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
-      e.preventDefault();
       showMessage('error', 'Service signup is not yet configured. Please contact us directly.');
       return;
     }
@@ -125,8 +117,39 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Submitting...';
 
-    // Allow the native form POST to proceed (no CORS issues)
-    // The form will submit to Apps Script which redirects to Stripe Checkout
+    // Collect form data
+    var formData = new FormData(form);
+    var params = new URLSearchParams(formData);
+
+    // Submit via fetch, then redirect to Stripe Checkout
+    fetch(APPS_SCRIPT_URL + '?source=signup_form', {
+      method: 'POST',
+      body: params,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      redirect: 'follow'
+    })
+    .then(function(response) {
+      return response.text();
+    })
+    .then(function(text) {
+      try {
+        var data = JSON.parse(text);
+        if (data.success && data.checkoutUrl) {
+          // Redirect to Stripe Checkout
+          window.location.href = data.checkoutUrl;
+        } else {
+          throw new Error(data.error || 'Signup failed');
+        }
+      } catch (parseErr) {
+        // If response isn't JSON, it might be an HTML error page
+        throw new Error('Unexpected response from server. Please try again.');
+      }
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = 'Request Service';
+      showMessage('error', 'Something went wrong: ' + err.message + '. Please try again or contact us.');
+    });
   });
 
   // Clear field errors on input

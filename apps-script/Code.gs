@@ -174,11 +174,12 @@ function handleFormSubmission_(e) {
   // Send checkout email
   sendCheckoutEmail_(email, fullName, session.url, portalUrl, plan);
 
-  // Redirect to Stripe Checkout
-  return HtmlService.createHtmlOutput(
-    '<html><head><script>window.top.location.href="' + sanitize_(session.url) + '";</script></head>' +
-    '<body><p>Redirecting to checkout...</p><p><a href="' + sanitize_(session.url) + '">Click here if not redirected.</a></p></body></html>'
-  );
+  // Return the checkout URL as JSON.
+  // The signup page JavaScript will handle the redirect client-side.
+  // This avoids Google's sandboxed iframe which blocks external redirects.
+  return ContentService.createTextOutput(
+    JSON.stringify({ success: true, checkoutUrl: session.url })
+  ).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── Utility ────────────────────────────────────────────────
