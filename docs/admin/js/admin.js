@@ -16,6 +16,7 @@ var currentView = 'dashboard';
 var cachedData = {};
 var prefetchDone = false;
 var refreshInterval = null;
+var viewingCustomerId = null;
 
 // ── Initialization ─────────────────────────────────────────
 
@@ -129,7 +130,11 @@ function updateRefreshStatus(text) {
 }
 
 function renderCurrentView() {
-  loadView(currentView);
+  if (viewingCustomerId) {
+    viewCustomer(viewingCustomerId);
+  } else {
+    loadView(currentView);
+  }
 }
 
 // ── API Calls ──────────────────────────────────────────────
@@ -222,6 +227,7 @@ function setupNav() {
 }
 
 function loadView(view) {
+  viewingCustomerId = null;
   currentView = view;
   var content = document.getElementById('content-area');
   var title = document.getElementById('page-title');
@@ -428,6 +434,7 @@ function searchCustomers() {
 }
 
 function viewCustomer(custId) {
+  viewingCustomerId = custId;
   var content = document.getElementById('content-area');
   document.getElementById('page-title').textContent = 'Customer Detail';
 
