@@ -1,0 +1,18 @@
+Device Type,Make/Model,Serial Number,MAC Address,IP Address,VLAN,Assigned To,Install Date,Location,Status,Notes
+AP,Cambium ePMP 3000,AP-SN-001,AA:BB:CC:00:00:01,10.0.1.1,1,,2025-10-01,Water Tower,Deployed,Main sector AP - 120 degree
+AP,Cambium ePMP 3000,AP-SN-002,AA:BB:CC:00:00:02,10.0.1.2,1,,2025-10-01,Water Tower,Deployed,Secondary sector AP - 120 degree
+CPE,Cambium ePMP Force 300-25,CPE-SN-001,AA:BB:CC:01:00:01,10.0.10.1,10,james.huntington@example.com,2025-11-20,412 Front St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-002,AA:BB:CC:01:00:02,10.0.10.2,10,mary.stevens@example.com,2025-12-05,208 A St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-003,AA:BB:CC:01:00:03,10.0.10.3,10,robert.charlie@example.com,2025-12-15,315 2nd St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-004,AA:BB:CC:01:00:04,10.0.10.4,10,lisa.titus@example.com,2026-01-10,102 B St,Deployed,Pole mount
+CPE,Cambium ePMP Force 300-25,CPE-SN-005,AA:BB:CC:01:00:05,10.0.10.5,20,david.alexie@example.com,2026-01-18,510 Front St,Deployed,Business VLAN
+CPE,Cambium ePMP Force 300-25,CPE-SN-006,AA:BB:CC:01:00:06,10.0.10.6,10,sarah.woods@example.com,2026-01-25,205 3rd St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-007,AA:BB:CC:01:00:07,10.0.10.7,10,michael.peter@example.com,2026-02-05,118 C St,Deployed,Account past due
+CPE,Cambium ePMP Force 300-25,CPE-SN-008,AA:BB:CC:01:00:08,10.0.10.8,10,angela.joseph@example.com,2026-02-15,422 A St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-009,AA:BB:CC:01:00:09,10.0.10.9,10,thomas.luke@example.com,2026-02-22,307 2nd St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-010,AA:BB:CC:01:00:10,10.0.10.10,20,jennifer.carlo@example.com,2026-03-01,115 Front St,Deployed,Business VLAN
+CPE,Cambium ePMP Force 300-25,CPE-SN-011,AA:BB:CC:01:00:11,10.0.10.11,10,william.simon@example.com,2026-03-08,220 4th St,Deployed,
+CPE,Cambium ePMP Force 300-25,CPE-SN-013,AA:BB:CC:01:00:13,,,10,daniel.edwin@example.com,,333 A St,Available,Ready for install
+CPE,Cambium ePMP Force 300-25,CPE-SN-015,AA:BB:CC:01:00:15,,,,,,Available,Spare unit
+Router,MikroTik hEX S,RTR-SN-001,AA:BB:CC:02:00:01,10.0.0.1,1,,2025-10-01,Tower Cabinet,Deployed,Edge router
+Switch,MikroTik CRS326,SW-SN-001,AA:BB:CC:03:00:01,10.0.0.2,1,,2025-10-01,Tower Cabinet,Deployed,Tower switch

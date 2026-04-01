@@ -10,7 +10,7 @@
  *   SUCCESS_URL           - e.g., https://yoursite.github.io/NenanaWISP/success.html
  *   CANCEL_URL            - e.g., https://yoursite.github.io/NenanaWISP/cancel.html
  *   PORTAL_RETURN_URL     - e.g., https://yoursite.github.io/NenanaWISP/
- *   FROM_NAME             - Display name for outgoing emails (e.g., "Nenana Internet")
+ *   FROM_NAME             - Display name for outgoing emails (e.g., "NNA Community Broadband")
  *   CONTACT_EMAIL         - Reply-to / contact email address
  *   CONTACT_PHONE         - Contact phone number
  *   ADMIN_EMAILS          - Comma-separated list of authorized admin email addresses

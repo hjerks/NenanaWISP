@@ -11,7 +11,7 @@
  * @returns {string} Complete HTML email
  */
 function buildEmailHtml_(bodyContent) {
-  var fromName = propOr('FROM_NAME', 'Nenana Internet');
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
   var contactEmail = propOr('CONTACT_EMAIL', '');
   var contactPhone = propOr('CONTACT_PHONE', '');
 
@@ -25,7 +25,7 @@ function buildEmailHtml_(bodyContent) {
     // Header
     '<tr><td style="background-color:#1a5276;padding:24px 32px;text-align:center;">' +
     '<h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;">' + sanitize_(fromName) + '</h1>' +
-    '<p style="margin:4px 0 0;color:#aed6f1;font-size:13px;">Reliable Internet for Nenana</p>' +
+    '<p style="margin:4px 0 0;color:#aed6f1;font-size:13px;">Community Broadband for Nenana</p>' +
     '</td></tr>' +
 
     // Body
@@ -63,7 +63,7 @@ function emailButton_(text, url) {
  * Send the initial checkout/payment link email.
  */
 function sendCheckoutEmail_(email, name, checkoutUrl, portalUrl, planName) {
-  var fromName = propOr('FROM_NAME', 'Nenana Internet');
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
   var firstName = name.split(' ')[0];
 
   var body =
@@ -98,7 +98,7 @@ function sendCheckoutEmail_(email, name, checkoutUrl, portalUrl, planName) {
  * Send welcome email after successful checkout.
  */
 function sendWelcomeEmail_(email, name, planName, portalUrl) {
-  var fromName = propOr('FROM_NAME', 'Nenana Internet');
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
   var firstName = name.split(' ')[0];
   var contactPhone = propOr('CONTACT_PHONE', '');
 
@@ -140,7 +140,7 @@ function sendWelcomeEmail_(email, name, planName, portalUrl) {
  * Send payment failure notification.
  */
 function sendPaymentFailedEmail_(email, name, portalUrl) {
-  var fromName = propOr('FROM_NAME', 'Nenana Internet');
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
   var firstName = name.split(' ')[0];
   var contactPhone = propOr('CONTACT_PHONE', '');
 
@@ -177,7 +177,7 @@ function sendPaymentFailedEmail_(email, name, portalUrl) {
  * Send cancellation confirmation.
  */
 function sendCancellationEmail_(email, name) {
-  var fromName = propOr('FROM_NAME', 'Nenana Internet');
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
   var firstName = name.split(' ')[0];
   var contactEmail = propOr('CONTACT_EMAIL', '');
 
@@ -211,7 +211,7 @@ function sendCancellationEmail_(email, name) {
  * @param {string} portalUrl
  */
 function sendSuspensionWarningEmail_(email, name, daysPastDue, portalUrl) {
-  var fromName = propOr('FROM_NAME', 'Nenana Internet');
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
   var firstName = name.split(' ')[0];
   var contactPhone = propOr('CONTACT_PHONE', '');
 

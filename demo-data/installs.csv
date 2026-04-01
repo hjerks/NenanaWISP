@@ -1,0 +1,10 @@
+Customer Name,Email,Service Address,Plan,Requested Preference,Scheduled Date,Technician,Equipment Assigned,Status,Completion Date,Notes
+James Huntington,james.huntington@example.com,"412 Front St, Nenana, AK 99760",Residential 100/20 Mbps,Schedule visit,2025-11-20,Mat,CPE-001,Completed,2025-11-20,Clean install - good LOS to tower
+Mary Stevens,mary.stevens@example.com,"208 A St, Nenana, AK 99760",Residential 50/10 Mbps,Schedule visit,2025-12-05,Mat,CPE-002,Completed,2025-12-05,Mounted on south side of roof
+Robert Charlie,robert.charlie@example.com,"315 2nd St, Nenana, AK 99760",Residential 100/20 Mbps,Schedule visit,2025-12-15,Mat,CPE-003,Completed,2025-12-15,
+Lisa Titus,lisa.titus@example.com,"102 B St, Nenana, AK 99760",Residential 50/10 Mbps,Schedule visit,2026-01-10,Mat,CPE-004,Completed,2026-01-10,Needed pole mount - trees blocking LOS
+David Alexie,david.alexie@example.com,"510 Front St, Nenana, AK 99760",Business 100/100 Mbps,Schedule visit,2026-01-18,Mat,CPE-005,Completed,2026-01-18,Business install - ran ethernet to office
+William Simon,william.simon@example.com,"220 4th St, Nenana, AK 99760",Residential 100/20 Mbps,Schedule visit,2026-03-08,Mat,CPE-011,Completed,2026-03-08,
+Daniel Edwin,daniel.edwin@example.com,"333 A St, Nenana, AK 99760",Residential 100/20 Mbps,Schedule visit,2026-04-05,,CPE-013,Scheduled,,Scheduled for Saturday morning
+Patricia Vent,patricia.vent@example.com,"128 3rd St, Nenana, AK 99760",Residential 50/10 Mbps,Schedule visit,2026-04-08,,,Pending,,Waiting on equipment
+George Frank,george.frank@example.com,"410 2nd St, Nenana, AK 99760",Residential 100/20 Mbps,Not sure,,,CPE-015,Pending,,Customer will call to schedule
