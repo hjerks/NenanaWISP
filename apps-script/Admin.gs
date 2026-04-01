@@ -604,32 +604,20 @@ function createCustomerManual_(params) {
 
   // Get price ID
   var priceId = getPriceIdForPlan_(plan);
-
-  // Create subscription in Stripe
-  var secret = prop('STRIPE_SECRET_KEY');
-  var subResponse = UrlFetchApp.fetch('https://api.stripe.com/v1/subscriptions', {
-    method: 'post',
-    headers: { 'Authorization': 'Bearer ' + secret },
-    payload: {
-      'customer': customer.id,
-      'items[0][price]': priceId,
-      'collection_method': 'charge_automatically'
-    },
-    muteHttpExceptions: true
-  });
-
-  var subBody = JSON.parse(subResponse.getContentText());
-  if (subResponse.getResponseCode() >= 300) {
-    return { error: 'stripe_error', message: subBody.error ? subBody.error.message : 'Failed to create subscription' };
-  }
-
   var rowKey = Utilities.getUuid();
 
-  // Get monthly price from Stripe response
-  var monthlyPrice = '';
-  try {
-    monthlyPrice = (subBody.items.data[0].price.unit_amount / 100).toFixed(2);
-  } catch (e) {}
+  // Check for optional installation fee
+  var installFeePrice = propOr('INSTALL_FEE_PRICE', '');
+
+  // Create a Checkout Session (sends payment link instead of charging directly)
+  var session = createCheckoutSession_({
+    customerId: customer.id,
+    priceId: priceId,
+    rowKey: rowKey,
+    email: email,
+    planName: plan,
+    installFeePrice: installFeePrice || null
+  });
 
   // Generate portal link
   var portalUrl = '';
@@ -637,48 +625,33 @@ function createCustomerManual_(params) {
     portalUrl = createPortalSession_(customer.id);
   } catch (e) {}
 
-  // Add to Customers sheet
-  var customerRow = [
-    customer.id,
-    fullName,
-    email,
-    phone,
-    address,
-    plan,
-    subBody.id,
-    'active',
-    monthlyPrice,
-    portalUrl,
-    new Date(),
-    new Date(),
-    'admin_created',
-    rowKey,
-    notes
+  // Add to Leads sheet (will be promoted to Customers when they pay)
+  ensureHeaders_(TAB_LEADS, LEADS_HEADERS);
+  var leadRow = [
+    new Date(),           // Timestamp
+    fullName,             // Full Name
+    email,                // Email
+    phone,                // Phone
+    address,              // Service Address
+    'Nenana',             // City
+    'AK',                 // State
+    '',                   // ZIP
+    plan,                 // Plan
+    '',                   // Contact Preference
+    '',                   // Contact Method
+    '',                   // Install Preference
+    notes,                // Notes
+    'true',               // TOS Agreed
+    rowKey,               // Row Key
+    customer.id,          // Stripe Customer ID
+    session.url,          // Checkout Link
+    'Checkout Sent',      // Lead Status
+    new Date()            // Created Date
   ];
-  appendRow_(TAB_CUSTOMERS, customerRow);
+  appendRow_(TAB_LEADS, leadRow);
 
-  // Add to Installs sheet
-  var installRow = [
-    fullName,
-    email,
-    address,
-    plan,
-    '',
-    '',
-    '',
-    '',
-    'Pending',
-    '',
-    'Manually created by admin'
-  ];
-  appendRow_(TAB_INSTALLS, installRow);
-
-  // Send welcome email
-  try {
-    sendWelcomeEmail_(email, fullName, plan, portalUrl);
-  } catch (e) {
-    Logger.log('Welcome email failed: ' + e.message);
-  }
+  // Send checkout email
+  sendCheckoutEmail_(email, fullName, session.url, portalUrl, plan);
 
   return { success: true, customerId: customer.id };
 }
