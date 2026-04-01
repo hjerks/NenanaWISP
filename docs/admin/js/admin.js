@@ -87,8 +87,9 @@ var PREFETCH_ACTIONS = ['admin_dashboard', 'admin_customers', 'admin_leads', 'ad
 
 function prefetchAllData(silent) {
   if (!silent) {
+    prefetchDone = false;
     var content = document.getElementById('content-area');
-    content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading data... this takes a few seconds on first load</p></div>';
+    content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p id="prefetch-status">Loading data... 0/' + PREFETCH_ACTIONS.length + '</p></div>';
   }
 
   var completed = 0;
@@ -97,14 +98,13 @@ function prefetchAllData(silent) {
   PREFETCH_ACTIONS.forEach(function(action) {
     apiCall(action, null, function(err, data) {
       completed++;
-      if (!silent && completed === 1 && !prefetchDone) {
-        // First response arrived -- render the current view immediately
-        prefetchDone = true;
-        renderCurrentView();
+      if (!silent) {
+        var statusEl = document.getElementById('prefetch-status');
+        if (statusEl) statusEl.textContent = 'Loading data... ' + completed + '/' + total;
       }
       if (completed === total) {
-        // All done -- re-render to make sure we have the latest
-        if (!silent) renderCurrentView();
+        prefetchDone = true;
+        renderCurrentView();
         updateRefreshStatus('Last updated: ' + new Date().toLocaleTimeString());
       }
     });
@@ -264,13 +264,30 @@ function loadView(view) {
 }
 
 /**
- * Get cached data or fetch it. Renders immediately from cache if available.
+ * Get cached data or wait for prefetch to complete.
+ * Only fetches directly if prefetch is done and cache is empty.
  */
 function getCachedOrFetch(action, params, callback) {
+  // If we have cached data, use it immediately
   if (cachedData[action]) {
     callback(null, cachedData[action].data);
     return;
   }
+  // If prefetch is still running, wait for it
+  if (!prefetchDone) {
+    var checkInterval = setInterval(function() {
+      if (cachedData[action]) {
+        clearInterval(checkInterval);
+        callback(null, cachedData[action].data);
+      } else if (prefetchDone) {
+        clearInterval(checkInterval);
+        // Prefetch finished but this action isn't cached -- fetch directly
+        apiCall(action, params, callback);
+      }
+    }, 200);
+    return;
+  }
+  // Prefetch is done but no cache -- fetch directly
   apiCall(action, params, callback);
 }
 
