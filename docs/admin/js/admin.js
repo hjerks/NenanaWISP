@@ -96,20 +96,26 @@ function prefetchAllData(silent) {
   var completed = 0;
   var total = PREFETCH_ACTIONS.length;
 
-  PREFETCH_ACTIONS.forEach(function(action) {
-    apiCall(action, null, function(err, data) {
+  // Load sequentially -- first call warms up Apps Script, rest are fast
+  function loadNext(index) {
+    if (index >= total) {
+      prefetchDone = true;
+      if (!silent) renderCurrentView();
+      updateRefreshStatus('Last updated: ' + new Date().toLocaleTimeString());
+      return;
+    }
+    apiCall(PREFETCH_ACTIONS[index], null, function(err, data) {
       completed++;
       if (!silent) {
         var statusEl = document.getElementById('prefetch-status');
         if (statusEl) statusEl.textContent = 'Loading data... ' + completed + '/' + total;
+        // Render dashboard as soon as it loads (first call)
+        if (index === 0 && !prefetchDone) renderCurrentView();
       }
-      if (completed === total) {
-        prefetchDone = true;
-        renderCurrentView();
-        updateRefreshStatus('Last updated: ' + new Date().toLocaleTimeString());
-      }
+      loadNext(index + 1);
     });
-  });
+  }
+  loadNext(0);
 
   // Set up auto-refresh every 5 minutes
   if (!refreshInterval) {
