@@ -113,7 +113,8 @@ function sendWelcomeEmail_(email, name, planName, portalUrl) {
     '<ul style="margin:0;padding:0 0 0 20px;color:#374151;line-height:1.8;">' +
     '<li>We\'ll contact you to schedule your equipment installation</li>' +
     '<li>Installation typically takes 1-2 hours</li>' +
-    '<li>Your monthly billing will begin automatically</li>' +
+    '<li>Your card won\'t be charged until your installation is complete</li>' +
+    '<li>Monthly billing begins on your installation date</li>' +
     '</ul></div>' +
 
     (portalUrl ?
