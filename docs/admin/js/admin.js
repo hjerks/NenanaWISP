@@ -489,100 +489,99 @@ function viewCustomer(custId) {
 
   var data = { customer: customer, equipment: equipment, tickets: tickets, installs: installs };
   var c = data.customer;
-    var html = '';
+  var html = '';
 
-    html += '<div class="action-bar">';
-    html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
-    html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
-    html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + esc(c['Stripe Customer ID']) + '" target="_blank">Open in Stripe</a>';
-    var subStatus = c['Subscription Status'];
-    if (subStatus === 'active' || subStatus === 'past_due') {
-      html += '<button class="btn btn-sm btn-danger" onclick="suspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Suspend Service</button>';
-    } else if (subStatus === 'suspended') {
-      html += '<button class="btn btn-sm btn-success" onclick="unsuspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Restore Service</button>';
-    }
-    html += '<button class="btn btn-sm btn-danger" onclick="deleteCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Delete</button>';
-    html += '</div>';
+  html += '<div class="action-bar">';
+  html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
+  html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
+  html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + esc(c['Stripe Customer ID']) + '" target="_blank">Open in Stripe</a>';
+  var subStatus = c['Subscription Status'];
+  if (subStatus === 'active' || subStatus === 'past_due') {
+    html += '<button class="btn btn-sm btn-danger" onclick="suspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Suspend Service</button>';
+  } else if (subStatus === 'suspended') {
+    html += '<button class="btn btn-sm btn-success" onclick="unsuspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Restore Service</button>';
+  }
+  html += '<button class="btn btn-sm btn-danger" onclick="deleteCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Delete</button>';
+  html += '</div>';
 
-    // Customer info
-    html += '<div class="two-col">';
-    html += '<div class="panel"><div class="panel-header"><h2>Customer Info</h2></div><div class="panel-body">';
-    html += infoRow('Name', c['Full Name']);
-    html += infoRow('Email', c['Email']);
-    html += infoRow('Phone', c['Phone']);
-    html += infoRow('Address', c['Service Address']);
-    html += infoRow('Plan', c['Plan']);
-    html += infoRow('Stripe ID', c['Stripe Customer ID']);
-    html += '</div></div>';
+  // Customer info
+  html += '<div class="two-col">';
+  html += '<div class="panel"><div class="panel-header"><h2>Customer Info</h2></div><div class="panel-body">';
+  html += infoRow('Name', c['Full Name']);
+  html += infoRow('Email', c['Email']);
+  html += infoRow('Phone', c['Phone']);
+  html += infoRow('Address', c['Service Address']);
+  html += infoRow('Plan', c['Plan']);
+  html += infoRow('Stripe ID', c['Stripe Customer ID']);
+  html += '</div></div>';
 
-    html += '<div class="panel"><div class="panel-header"><h2>Billing</h2></div><div class="panel-body">';
-    html += infoRow('Status', badge(c['Subscription Status']));
-    html += infoRow('Subscription ID', c['Stripe Subscription ID']);
-    html += infoRow('Monthly Price', c['Monthly Price'] ? '$' + c['Monthly Price'] : '--');
-    html += infoRow('Signup Date', formatDate(c['Signup Date']));
-    html += infoRow('Last Payment', formatDate(c['Last Payment Date']));
-    html += infoRow('Last Event', c['Last Event']);
-    html += '</div></div>';
-    html += '</div>';
+  html += '<div class="panel"><div class="panel-header"><h2>Billing</h2></div><div class="panel-body">';
+  html += infoRow('Status', badge(c['Subscription Status']));
+  html += infoRow('Subscription ID', c['Stripe Subscription ID']);
+  html += infoRow('Monthly Price', c['Monthly Price'] ? '$' + c['Monthly Price'] : '--');
+  html += infoRow('Signup Date', formatDate(c['Signup Date']));
+  html += infoRow('Last Payment', formatDate(c['Last Payment Date']));
+  html += infoRow('Last Event', c['Last Event']);
+  html += '</div></div>';
+  html += '</div>';
 
-    // Equipment
-    html += '<div class="panel"><div class="panel-header"><h2>Equipment</h2></div>';
-    if (data.equipment && data.equipment.length > 0) {
-      html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Type</th><th>Make/Model</th><th>MAC</th><th>IP</th><th>Status</th></tr>';
-      data.equipment.forEach(function(eq) {
-        html += '<tr><td>' + esc(eq['Device Type']) + '</td><td>' + esc(eq['Make/Model']) + '</td>';
-        html += '<td>' + esc(eq['MAC Address']) + '</td><td>' + esc(eq['IP Address']) + '</td>';
-        html += '<td>' + badge(eq['Status']) + '</td></tr>';
-      });
-      html += '</table></div>';
-    } else {
-      html += '<div class="panel-body"><div class="empty-state"><p>No equipment assigned.</p></div></div>';
-    }
-    html += '</div>';
+  // Equipment
+  html += '<div class="panel"><div class="panel-header"><h2>Equipment</h2></div>';
+  if (data.equipment && data.equipment.length > 0) {
+    html += '<div class="panel-body no-pad"><table class="data-table">';
+    html += '<tr><th>Type</th><th>Make/Model</th><th>MAC</th><th>IP</th><th>Status</th></tr>';
+    data.equipment.forEach(function(eq) {
+      html += '<tr><td>' + esc(eq['Device Type']) + '</td><td>' + esc(eq['Make/Model']) + '</td>';
+      html += '<td>' + esc(eq['MAC Address']) + '</td><td>' + esc(eq['IP Address']) + '</td>';
+      html += '<td>' + badge(eq['Status']) + '</td></tr>';
+    });
+    html += '</table></div>';
+  } else {
+    html += '<div class="panel-body"><div class="empty-state"><p>No equipment assigned.</p></div></div>';
+  }
+  html += '</div>';
 
-    // Support tickets
-    html += '<div class="panel"><div class="panel-header"><h2>Support Tickets</h2></div>';
-    if (data.tickets && data.tickets.length > 0) {
-      html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Ticket</th><th>Date</th><th>Category</th><th>Status</th></tr>';
-      data.tickets.forEach(function(t) {
-        html += '<tr><td>' + esc(t['Ticket #']) + '</td><td>' + formatDate(t['Date Opened']) + '</td>';
-        html += '<td>' + esc(t['Category']) + '</td><td>' + badge(t['Status']) + '</td></tr>';
-      });
-      html += '</table></div>';
-    } else {
-      html += '<div class="panel-body"><div class="empty-state"><p>No support tickets.</p></div></div>';
-    }
-    html += '</div>';
+  // Support tickets
+  html += '<div class="panel"><div class="panel-header"><h2>Support Tickets</h2></div>';
+  if (data.tickets && data.tickets.length > 0) {
+    html += '<div class="panel-body no-pad"><table class="data-table">';
+    html += '<tr><th>Ticket</th><th>Date</th><th>Category</th><th>Status</th></tr>';
+    data.tickets.forEach(function(t) {
+      html += '<tr><td>' + esc(t['Ticket #']) + '</td><td>' + formatDate(t['Date Opened']) + '</td>';
+      html += '<td>' + esc(t['Category']) + '</td><td>' + badge(t['Status']) + '</td></tr>';
+    });
+    html += '</table></div>';
+  } else {
+    html += '<div class="panel-body"><div class="empty-state"><p>No support tickets.</p></div></div>';
+  }
+  html += '</div>';
 
-    // Install history
-    html += '<div class="panel"><div class="panel-header"><h2>Installation</h2></div>';
-    if (data.installs && data.installs.length > 0) {
-      html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Requested</th><th>Scheduled</th><th>Technician</th><th>Status</th></tr>';
-      data.installs.forEach(function(inst) {
-        html += '<tr><td>' + esc(inst['Requested Preference']) + '</td>';
-        html += '<td>' + formatDate(inst['Scheduled Date']) + '</td>';
-        html += '<td>' + esc(inst['Technician']) + '</td>';
-        html += '<td>' + badge(inst['Status']) + '</td></tr>';
-      });
-      html += '</table></div>';
-    } else {
-      html += '<div class="panel-body"><div class="empty-state"><p>No installation records.</p></div></div>';
-    }
-    html += '</div>';
+  // Install history
+  html += '<div class="panel"><div class="panel-header"><h2>Installation</h2></div>';
+  if (data.installs && data.installs.length > 0) {
+    html += '<div class="panel-body no-pad"><table class="data-table">';
+    html += '<tr><th>Requested</th><th>Scheduled</th><th>Technician</th><th>Status</th></tr>';
+    data.installs.forEach(function(inst) {
+      html += '<tr><td>' + esc(inst['Requested Preference']) + '</td>';
+      html += '<td>' + formatDate(inst['Scheduled Date']) + '</td>';
+      html += '<td>' + esc(inst['Technician']) + '</td>';
+      html += '<td>' + badge(inst['Status']) + '</td></tr>';
+    });
+    html += '</table></div>';
+  } else {
+    html += '<div class="panel-body"><div class="empty-state"><p>No installation records.</p></div></div>';
+  }
+  html += '</div>';
 
-    // Notes (editable)
-    html += '<div class="panel"><div class="panel-header"><h2>Notes</h2></div>';
-    html += '<div class="panel-body">';
-    html += '<textarea id="customer-notes" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:0.88rem;resize:vertical;">' + esc(c['Notes'] || '') + '</textarea>';
-    html += '<button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
-    html += '<span id="notes-status" style="margin-left:8px;font-size:0.82rem;color:#6b7280;"></span>';
-    html += '</div></div>';
+  // Notes (editable)
+  html += '<div class="panel"><div class="panel-header"><h2>Notes</h2></div>';
+  html += '<div class="panel-body">';
+  html += '<textarea id="customer-notes" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:0.88rem;resize:vertical;">' + esc(c['Notes'] || '') + '</textarea>';
+  html += '<button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
+  html += '<span id="notes-status" style="margin-left:8px;font-size:0.82rem;color:#6b7280;"></span>';
+  html += '</div></div>';
 
-    content.innerHTML = html;
-  });
+  content.innerHTML = html;
 }
 
 // ── Leads View ─────────────────────────────────────────────
