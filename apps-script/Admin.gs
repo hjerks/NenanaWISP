@@ -232,6 +232,7 @@ function getAdminDashboard_() {
     } else if (status === 'past_due') {
       pastDueCount++;
       pastDueCustomers.push({
+        id: c['Stripe Customer ID'],
         name: c['Full Name'],
         email: c['Email'],
         plan: c['Plan'],
@@ -261,7 +262,7 @@ function getAdminDashboard_() {
     var signup = new Date(c['Signup Date']);
     return signup >= thirtyDaysAgo;
   }).map(function(c) {
-    return { name: c['Full Name'], plan: c['Plan'], date: c['Signup Date'] };
+    return { id: c['Stripe Customer ID'], name: c['Full Name'], plan: c['Plan'], date: c['Signup Date'] };
   });
 
   return {

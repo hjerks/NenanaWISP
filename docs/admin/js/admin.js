@@ -339,7 +339,7 @@ function loadDashboard(container) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
       html += '<tr><th>Name</th><th>Plan</th><th>Last Payment</th></tr>';
       data.pastDueCustomers.forEach(function(c) {
-        html += '<tr><td>' + esc(c.name) + '<br><small style="color:#6b7280;">' + esc(c.email) + '</small></td>';
+        html += '<tr><td><a href="#" onclick="viewCustomer(\'' + esc(c.id) + '\');return false;" style="color:inherit;text-decoration:none;"><strong>' + esc(c.name) + '</strong></a><br><small style="color:#6b7280;">' + esc(c.email) + '</small></td>';
         html += '<td>' + esc(c.plan) + '</td>';
         html += '<td>' + formatDate(c.lastPayment) + '</td></tr>';
       });
@@ -356,7 +356,7 @@ function loadDashboard(container) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
       html += '<tr><th>Name</th><th>Plan</th><th>Date</th></tr>';
       data.recentSignups.forEach(function(c) {
-        html += '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.plan) + '</td><td>' + formatDate(c.date) + '</td></tr>';
+        html += '<tr><td><a href="#" onclick="viewCustomer(\'' + esc(c.id) + '\');return false;" style="color:var(--color-primary-light);cursor:pointer;">' + esc(c.name) + '</a></td><td>' + esc(c.plan) + '</td><td>' + formatDate(c.date) + '</td></tr>';
       });
       html += '</table></div>';
     } else {
