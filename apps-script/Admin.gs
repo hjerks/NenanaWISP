@@ -190,6 +190,9 @@ function handleAdminRequest_(e) {
     case 'admin_delete_lead':
       result = deleteLead_(e.parameter);
       break;
+    case 'admin_delete_customer':
+      result = deleteCustomer_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -715,6 +718,40 @@ function resendCheckout_(params) {
 
   // Send the email
   sendCheckoutEmail_(email, name, session.url, portalUrl, plan);
+
+  return { success: true };
+}
+
+/**
+ * Delete a customer. Cancels their Stripe subscription and removes the row.
+ */
+function deleteCustomer_(params) {
+  var custId = params.id || '';
+  if (!custId) return { error: 'missing_id' };
+
+  var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, custId);
+  if (!customerRow) return { error: 'not_found' };
+
+  var customerData = readRow_(TAB_CUSTOMERS, customerRow, CUSTOMERS_HEADERS.length);
+  var subId = customerData[C_.STRIPE_SUB_ID - 1];
+
+  // Cancel the subscription in Stripe if it exists
+  if (subId) {
+    try {
+      var secret = prop('STRIPE_SECRET_KEY');
+      UrlFetchApp.fetch('https://api.stripe.com/v1/subscriptions/' + subId, {
+        method: 'delete',
+        headers: { 'Authorization': 'Bearer ' + secret },
+        muteHttpExceptions: true
+      });
+    } catch (e) {
+      Logger.log('Stripe cancel error: ' + e.message);
+    }
+  }
+
+  // Delete the row from the sheet
+  var sheet = getSheet_(TAB_CUSTOMERS);
+  sheet.deleteRow(customerRow);
 
   return { success: true };
 }

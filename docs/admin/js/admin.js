@@ -450,6 +450,7 @@ function viewCustomer(custId) {
     } else if (subStatus === 'suspended') {
       html += '<button class="btn btn-sm btn-success" onclick="unsuspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Restore Service</button>';
     }
+    html += '<button class="btn btn-sm btn-danger" onclick="deleteCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Delete</button>';
     html += '</div>';
 
     // Customer info
@@ -924,6 +925,22 @@ function unsuspendCustomer(custId, name) {
     delete cachedData['admin_customers'];
     delete cachedData['admin_dashboard'];
     viewCustomer(custId);
+  });
+}
+
+// ── Delete Customer ────────────────────────────────────────
+
+function deleteCustomer(custId, name) {
+  if (!confirm('Delete ' + name + '? This will cancel their Stripe subscription and remove them from the system. This cannot be undone.')) return;
+  if (!confirm('Are you sure? This is permanent.')) return;
+  apiCall('admin_delete_customer', { id: custId }, function(err, data) {
+    if (err || !data || !data.success) {
+      alert('Failed to delete: ' + (data ? data.message || data.error : err.message));
+      return;
+    }
+    delete cachedData['admin_customers'];
+    delete cachedData['admin_dashboard'];
+    loadView('customers');
   });
 }
 
