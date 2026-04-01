@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support - Nenana Internet</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .support-content {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    .support-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin: 32px 0;
+    }
+    @media (max-width: 600px) {
+      .support-cards {
+        grid-template-columns: 1fr;
+      }
+    }
+    .support-card {
+      background: var(--color-white);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      text-align: center;
+    }
+    .support-card .icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+    }
+    .support-card h3 {
+      color: var(--color-primary);
+      margin-bottom: 8px;
+    }
+    .support-card p {
+      color: var(--color-text-light);
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+    .support-card a {
+      font-weight: 600;
+    }
+    .faq-section {
+      margin-top: 48px;
+    }
+    .faq-item {
+      background: var(--color-white);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .faq-question {
+      padding: 16px 20px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+    .faq-question:hover {
+      background-color: #f8fafc;
+    }
+    .faq-arrow {
+      transition: transform 0.2s;
+      font-size: 0.8rem;
+      color: var(--color-text-light);
+    }
+    .faq-item.open .faq-arrow {
+      transform: rotate(180deg);
+    }
+    .faq-answer {
+      display: none;
+      padding: 0 20px 16px;
+      color: var(--color-text-light);
+      line-height: 1.6;
+    }
+    .faq-item.open .faq-answer {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav-container">
+      <a href="/" class="nav-brand">Nenana Internet</a>
+      <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('.nav-links').classList.toggle('open')">&#9776;</button>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/#plans">Plans</a></li>
+        <li><a href="account.html">My Account</a></li>
+        <li><a href="/#signup" class="nav-cta">Sign Up</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="support-content">
+    <h1 class="section-title">Support</h1>
+    <p class="section-subtitle">We're here to help. Reach out using any of the methods below.</p>
+
+    <div class="support-cards">
+      <div class="support-card">
+        <div class="icon">&#9993;</div>
+        <h3>Email</h3>
+        <p>Send us a message and we'll get back to you as soon as possible.</p>
+        <a href="mailto:[CONTACT_EMAIL]">[CONTACT_EMAIL]</a>
+      </div>
+      <div class="support-card">
+        <div class="icon">&#9742;</div>
+        <h3>Phone</h3>
+        <p>Call us during business hours for immediate assistance.</p>
+        <a href="tel:[CONTACT_PHONE]">[CONTACT_PHONE]</a>
+      </div>
+    </div>
+
+    <div class="faq-section">
+      <h2 class="section-title">Frequently Asked Questions</h2>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          How do I update my payment method?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          Use the account management link from any of your billing emails to access your account portal. From there you can update your credit card, view invoices, and manage your subscription. If you can't find the link, contact us and we'll send you a new one.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          What speeds can I expect?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          Speeds depend on your plan and location. Our residential plans offer up to 50 Mbps or 100 Mbps download, and our business plan offers 100 Mbps symmetric. Actual speeds may vary based on distance from the tower, weather conditions, and network usage.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          Is there a data cap?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          No. All of our plans include unlimited data with no caps or throttling.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          How long does installation take?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          A typical installation takes 1-2 hours. This includes mounting the outdoor antenna, running cabling, and setting up your indoor equipment. We'll schedule a time that works for you after you sign up.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          Can I cancel at any time?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          Yes. There are no contracts or early termination fees. You can cancel through your account portal or by contacting us. Service continues through the end of your current billing period.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          What happens if my internet goes down?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          First, try restarting your indoor equipment (unplug for 30 seconds, then plug back in). If the issue persists, contact us by phone or email and we'll troubleshoot the problem. If it's a network-wide issue, we're likely already aware and working on it.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          What equipment do I need?
+          <span class="faq-arrow">&#9660;</span>
+        </div>
+        <div class="faq-answer">
+          We provide all the necessary equipment as part of your service, including the outdoor antenna and indoor router. You don't need to purchase anything. Equipment remains the property of Nenana Internet and should be returned if you cancel service.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-content">
+      <div class="footer-info">
+        <p>Nenana Internet - A service of the Nenana Native Association</p>
+        <p>Nenana, Alaska</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

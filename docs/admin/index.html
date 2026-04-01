@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Portal - Nenana Internet</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+  <!-- ── Auth Screen (shown when not logged in) ────────── -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <h1>Nenana Internet</h1>
+      <p>Admin Portal</p>
+      <p style="font-size: 0.85rem;">Sign in with your authorized Google account to access the management dashboard.</p>
+      <button class="btn btn-primary" id="auth-btn" onclick="startAuth()">Sign In with Google</button>
+      <p id="auth-error" style="color: #c0392b; margin-top: 16px; display: none;"></p>
+    </div>
+  </div>
+
+  <!-- ── Admin Layout (shown when logged in) ───────────── -->
+  <div id="admin-app" class="admin-layout" style="display: none;">
+
+    <!-- Sidebar -->
+    <aside class="admin-sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        Nenana Internet
+        <small>Admin Portal</small>
+      </div>
+      <ul class="sidebar-nav">
+        <li><a href="#dashboard" class="active" data-view="dashboard"><span class="nav-icon">&#9634;</span> Dashboard</a></li>
+        <li><a href="#customers" data-view="customers"><span class="nav-icon">&#128101;</span> Customers</a></li>
+        <li><a href="#leads" data-view="leads"><span class="nav-icon">&#128203;</span> Leads</a></li>
+        <hr class="sidebar-divider">
+        <li><a href="#installs" data-view="installs"><span class="nav-icon">&#128295;</span> Installs</a></li>
+        <li><a href="#equipment" data-view="equipment"><span class="nav-icon">&#128225;</span> Equipment</a></li>
+        <hr class="sidebar-divider">
+        <li><a href="#support" data-view="support"><span class="nav-icon">&#127919;</span> Support</a></li>
+      </ul>
+      <div class="sidebar-footer">
+        <a href="../">&#8592; Back to public site</a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <header class="admin-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+          <h1 id="page-title">Dashboard</h1>
+        </div>
+        <div class="user-info" id="user-email"></div>
+      </header>
+
+      <div class="admin-content" id="content-area">
+        <div class="loading">
+          <div class="loading-spinner"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nenana Internet - Fast, Reliable Internet for Nenana</title>
+  <meta name="description" content="Locally operated wireless broadband serving homes and businesses in Nenana, Alaska.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ── Header / Navigation ──────────────────────────── -->
+  <header class="site-header">
+    <nav class="nav-container">
+      <a href="/" class="nav-brand">
+        Nenana Internet
+      </a>
+      <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('.nav-links').classList.toggle('open')">
+        &#9776;
+      </button>
+      <ul class="nav-links">
+        <li><a href="#plans">Plans</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="support.html">Support</a></li>
+        <li><a href="account.html">My Account</a></li>
+        <li><a href="#signup" class="nav-cta">Sign Up</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- ── Hero Section ─────────────────────────────────── -->
+  <section class="hero">
+    <h1>Fast, Reliable Internet for Nenana</h1>
+    <p>Locally operated wireless broadband serving homes and businesses in the Nenana area. Powered by the Nenana Native Association.</p>
+    <a href="#plans" class="hero-cta">View Plans &amp; Pricing</a>
+  </section>
+
+  <!-- ── Plans Section ────────────────────────────────── -->
+  <section class="section" id="plans">
+    <h2 class="section-title">Choose Your Plan</h2>
+    <p class="section-subtitle">No contracts. No hidden fees. Just fast, reliable internet.</p>
+
+    <div class="plans-grid">
+
+      <!-- Residential 50/10 -->
+      <div class="plan-card">
+        <h3 class="plan-name">Residential Basic</h3>
+        <p class="plan-speed">50 Mbps down / 10 Mbps up</p>
+        <p class="plan-price">$XX <span>/month</span></p>
+        <ul class="plan-features">
+          <li>Great for browsing &amp; email</li>
+          <li>Stream video in HD</li>
+          <li>Connect multiple devices</li>
+          <li>No data caps</li>
+        </ul>
+        <button class="plan-btn" data-plan="Residential 50/10 Mbps" onclick="selectPlan(this)">Sign Up</button>
+      </div>
+
+      <!-- Residential 100/20 (Featured) -->
+      <div class="plan-card featured">
+        <span class="plan-badge">Most Popular</span>
+        <h3 class="plan-name">Residential Plus</h3>
+        <p class="plan-speed">100 Mbps down / 20 Mbps up</p>
+        <p class="plan-price">$XX <span>/month</span></p>
+        <ul class="plan-features">
+          <li>HD &amp; 4K streaming</li>
+          <li>Online gaming</li>
+          <li>Work from home ready</li>
+          <li>No data caps</li>
+        </ul>
+        <button class="plan-btn" data-plan="Residential 100/20 Mbps" onclick="selectPlan(this)">Sign Up</button>
+      </div>
+
+      <!-- Business 100/100 -->
+      <div class="plan-card">
+        <h3 class="plan-name">Business</h3>
+        <p class="plan-speed">100 Mbps symmetric</p>
+        <p class="plan-price">$XX <span>/month</span></p>
+        <ul class="plan-features">
+          <li>Equal upload &amp; download speeds</li>
+          <li>Priority support</li>
+          <li>Ideal for businesses</li>
+          <li>No data caps</li>
+        </ul>
+        <button class="plan-btn" data-plan="Business 100/100 Mbps" onclick="selectPlan(this)">Sign Up</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Signup Form Section ──────────────────────────── -->
+  <section class="signup-section" id="signup">
+    <div class="signup-container">
+      <h2 class="section-title">Request Service</h2>
+      <p class="section-subtitle">Fill out the form below and we'll send you a secure payment link to get started.</p>
+
+      <form id="signup-form" action="" method="POST">
+        <input type="hidden" name="source" value="signup_form">
+
+        <div class="form-grid">
+
+          <div class="form-group">
+            <label for="full_name">Full Name <span class="required">*</span></label>
+            <input type="text" id="full_name" name="full_name" required autocomplete="name">
+            <span class="form-error" id="err-name">Please enter your full name</span>
+          </div>
+
+          <div class="form-group">
+            <label for="email">Email Address <span class="required">*</span></label>
+            <input type="email" id="email" name="email" required autocomplete="email">
+            <span class="form-error" id="err-email">Please enter a valid email address</span>
+          </div>
+
+          <div class="form-group">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" name="phone" autocomplete="tel">
+          </div>
+
+          <div class="form-group">
+            <label for="plan">Service Plan <span class="required">*</span></label>
+            <select id="plan" name="plan" required>
+              <option value="">-- Select a plan --</option>
+              <option value="Residential 50/10 Mbps">Residential Basic - 50/10 Mbps</option>
+              <option value="Residential 100/20 Mbps">Residential Plus - 100/20 Mbps</option>
+              <option value="Business 100/100 Mbps">Business - 100/100 Mbps</option>
+            </select>
+            <span class="form-error" id="err-plan">Please select a plan</span>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="address">Service Address <span class="required">*</span></label>
+            <input type="text" id="address" name="address" required autocomplete="street-address" placeholder="Street address where service will be installed">
+            <span class="form-error" id="err-address">Please enter your service address</span>
+          </div>
+
+          <div class="form-group">
+            <label for="city">City</label>
+            <input type="text" id="city" name="city" value="Nenana" autocomplete="address-level2">
+          </div>
+
+          <div class="form-group">
+            <label for="state">State</label>
+            <input type="text" id="state" name="state" value="AK" autocomplete="address-level1" maxlength="2">
+          </div>
+
+          <div class="form-group">
+            <label for="zip">ZIP Code</label>
+            <input type="text" id="zip" name="zip" autocomplete="postal-code" maxlength="10" placeholder="99760">
+          </div>
+
+          <div class="form-group">
+            <label for="contact_pref">Best Time to Contact</label>
+            <select id="contact_pref" name="contact_pref">
+              <option value="">No preference</option>
+              <option value="Morning">Morning</option>
+              <option value="Afternoon">Afternoon</option>
+              <option value="Evening">Evening</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="contact_method">Preferred Contact Method</label>
+            <select id="contact_method" name="contact_method">
+              <option value="Email">Email</option>
+              <option value="Phone">Phone</option>
+              <option value="Text">Text</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="install_pref">Installation Preference</label>
+            <select id="install_pref" name="install_pref">
+              <option value="Schedule visit">Schedule an installation visit</option>
+              <option value="Remote">Remote setup (if possible)</option>
+              <option value="Not sure">Not sure yet</option>
+            </select>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="notes">Additional Notes</label>
+            <textarea id="notes" name="notes" placeholder="Any special instructions, questions, or details about your location..."></textarea>
+          </div>
+
+          <div class="form-group full-width">
+            <div class="tos-check">
+              <input type="checkbox" id="tos_agreed" name="tos_agreed" value="true" required>
+              <label for="tos_agreed">I agree to the <a href="tos.html" target="_blank">Terms of Service</a> and <a href="tos.html#aup" target="_blank">Acceptable Use Policy</a> <span class="required">*</span></label>
+            </div>
+            <span class="form-error" id="err-tos">You must agree to the Terms of Service</span>
+          </div>
+
+        </div>
+
+        <button type="submit" class="submit-btn" id="submit-btn">Request Service</button>
+
+        <div class="form-message" id="form-message"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── About Section ────────────────────────────────── -->
+  <section class="section" id="about">
+    <div class="about-content">
+      <div class="about-text">
+        <h3>About Nenana Internet</h3>
+        <p>We are a locally operated wireless internet service provider serving the Nenana community. Our mission is to provide fast, reliable, and affordable internet access to homes and businesses in the area.</p>
+        <p>Operated by the Nenana Native Association, we're committed to bridging the digital divide and keeping our community connected.</p>
+      </div>
+      <div class="about-text">
+        <h3>Why Choose Us?</h3>
+        <ul class="about-features">
+          <li>Local operation and support</li>
+          <li>No long-term contracts</li>
+          <li>No hidden fees or data caps</li>
+          <li>Professional installation included</li>
+          <li>Responsive customer service</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ───────────────────────────────────────── -->
+  <footer class="site-footer">
+    <div class="footer-content">
+      <div class="footer-links">
+        <a href="#plans">Plans</a>
+        <a href="#signup">Sign Up</a>
+        <a href="account.html">My Account</a>
+        <a href="support.html">Support</a>
+        <a href="tos.html">Terms of Service</a>
+      </div>
+      <div class="footer-info">
+        <p>Nenana Internet - A service of the Nenana Native Association</p>
+        <p>Nenana, Alaska</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/signup.js"></script>
+</body>
+</html>
