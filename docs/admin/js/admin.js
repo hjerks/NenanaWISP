@@ -14,6 +14,8 @@ var adminToken = null;
 var adminEmail = null;
 var currentView = 'dashboard';
 var cachedData = {};
+var prefetchDone = false;
+var refreshInterval = null;
 
 // ── Initialization ─────────────────────────────────────────
 
@@ -33,7 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (adminToken) {
     showApp();
-    loadView('dashboard');
+    prefetchAllData();
   }
 
   // Set up navigation
@@ -77,6 +79,57 @@ function showAuthError(msg) {
   var el = document.getElementById('auth-error');
   el.textContent = msg;
   el.style.display = 'block';
+}
+
+// ── Prefetch ───────────────────────────────────────────────
+
+var PREFETCH_ACTIONS = ['admin_dashboard', 'admin_customers', 'admin_leads', 'admin_installs', 'admin_equipment', 'admin_support'];
+
+function prefetchAllData(silent) {
+  if (!silent) {
+    var content = document.getElementById('content-area');
+    content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading data... this takes a few seconds on first load</p></div>';
+  }
+
+  var completed = 0;
+  var total = PREFETCH_ACTIONS.length;
+
+  PREFETCH_ACTIONS.forEach(function(action) {
+    apiCall(action, null, function(err, data) {
+      completed++;
+      if (!silent && completed === 1 && !prefetchDone) {
+        // First response arrived -- render the current view immediately
+        prefetchDone = true;
+        renderCurrentView();
+      }
+      if (completed === total) {
+        // All done -- re-render to make sure we have the latest
+        if (!silent) renderCurrentView();
+        updateRefreshStatus('Last updated: ' + new Date().toLocaleTimeString());
+      }
+    });
+  });
+
+  // Set up auto-refresh every 5 minutes
+  if (!refreshInterval) {
+    refreshInterval = setInterval(function() {
+      prefetchAllData(true);
+    }, 300000);
+  }
+}
+
+function refreshData() {
+  updateRefreshStatus('Refreshing...');
+  prefetchAllData(false);
+}
+
+function updateRefreshStatus(text) {
+  var el = document.getElementById('refresh-status');
+  if (el) el.textContent = text;
+}
+
+function renderCurrentView() {
+  loadView(currentView);
 }
 
 // ── API Calls ──────────────────────────────────────────────
@@ -172,7 +225,13 @@ function loadView(view) {
   currentView = view;
   var content = document.getElementById('content-area');
   var title = document.getElementById('page-title');
-  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading... this may take a few seconds on first load</p></div>';
+
+  // Show loading only if no cached data exists
+  var actionMap = { dashboard: 'admin_dashboard', customers: 'admin_customers', leads: 'admin_leads', installs: 'admin_installs', equipment: 'admin_equipment', support: 'admin_support' };
+  var hasCache = cachedData[actionMap[view]];
+  if (!hasCache) {
+    content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading...</p></div>';
+  }
 
   switch (view) {
     case 'dashboard':
@@ -204,10 +263,21 @@ function loadView(view) {
   }
 }
 
+/**
+ * Get cached data or fetch it. Renders immediately from cache if available.
+ */
+function getCachedOrFetch(action, params, callback) {
+  if (cachedData[action]) {
+    callback(null, cachedData[action].data);
+    return;
+  }
+  apiCall(action, params, callback);
+}
+
 // ── Dashboard View ─────────────────────────────────────────
 
 function loadDashboard(container) {
-  apiCall('admin_dashboard', null, function(err, data) {
+  getCachedOrFetch('admin_dashboard', null, function(err, data) {
     if (err || !data || !data.summary) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load dashboard data.</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="loadView(\'dashboard\')">Retry</button></p></div>';
       return;
@@ -294,7 +364,7 @@ function statCard(label, value, colorClass, isMoney) {
 
 function loadCustomers(container, search) {
   var params = search ? { search: search } : {};
-  apiCall('admin_customers', params, function(err, data) {
+  getCachedOrFetch('admin_customers', params, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load customers.</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="loadView(\'customers\')">Retry</button></p></div>';
       return;
@@ -443,7 +513,7 @@ function viewCustomer(custId) {
 // ── Leads View ─────────────────────────────────────────────
 
 function loadLeads(container) {
-  apiCall('admin_leads', null, function(err, data) {
+  getCachedOrFetch('admin_leads', null, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load leads.</p></div>';
       return;
@@ -473,7 +543,7 @@ function loadLeads(container) {
 // ── Installs View ──────────────────────────────────────────
 
 function loadInstalls(container) {
-  apiCall('admin_installs', null, function(err, data) {
+  getCachedOrFetch('admin_installs', null, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load installs.</p></div>';
       return;
@@ -524,7 +594,7 @@ function editInstall(inst) {
 // ── Equipment View ─────────────────────────────────────────
 
 function loadEquipment(container) {
-  apiCall('admin_equipment', null, function(err, data) {
+  getCachedOrFetch('admin_equipment', null, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load equipment.</p></div>';
       return;
@@ -593,7 +663,7 @@ function addEquipment() {
 // ── Support View ───────────────────────────────────────────
 
 function loadSupport(container) {
-  apiCall('admin_support', null, function(err, data) {
+  getCachedOrFetch('admin_support', null, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load tickets.</p></div>';
       return;

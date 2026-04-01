@@ -50,7 +50,11 @@
           <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
           <h1 id="page-title">Dashboard</h1>
         </div>
-        <div class="user-info" id="user-email"></div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="refresh-status" style="font-size:0.75rem;color:#9ca3af;"></span>
+          <button class="btn btn-sm btn-outline" onclick="refreshData()">Refresh</button>
+          <span class="user-info" id="user-email"></span>
+        </div>
       </header>
 
       <div class="admin-content" id="content-area">
