@@ -93,18 +93,42 @@ function apiCall(action, params, callback) {
     }
   }
 
-  fetch(url)
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data.error === 'unauthorized') {
-        logout();
-        showAuthError('Session expired. Please sign in again.');
-        return;
+  // Use AbortController for 30-second timeout
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
+
+  fetch(url, { signal: controller.signal, redirect: 'follow' })
+    .then(function(res) {
+      clearTimeout(timeoutId);
+      return res.text();
+    })
+    .then(function(text) {
+      try {
+        var data = JSON.parse(text);
+        if (data.error === 'unauthorized') {
+          logout();
+          showAuthError('Session expired. Please sign in again.');
+          return;
+        }
+        // Cache the result
+        cachedData[action] = { data: data, time: Date.now() };
+        callback(null, data);
+      } catch (e) {
+        callback(new Error('Invalid response from server'), null);
       }
-      callback(null, data);
     })
     .catch(function(err) {
-      callback(err, null);
+      clearTimeout(timeoutId);
+      // On timeout or error, try cached data
+      if (cachedData[action] && (Date.now() - cachedData[action].time < 300000)) {
+        callback(null, cachedData[action].data);
+        return;
+      }
+      if (err.name === 'AbortError') {
+        callback(new Error('Request timed out. Apps Script may be warming up -- try again in a few seconds.'), null);
+      } else {
+        callback(err, null);
+      }
     });
 }
 
@@ -131,7 +155,7 @@ function loadView(view) {
   currentView = view;
   var content = document.getElementById('content-area');
   var title = document.getElementById('page-title');
-  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading...</p></div>';
+  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading... this may take a few seconds on first load</p></div>';
 
   switch (view) {
     case 'dashboard':
@@ -168,7 +192,7 @@ function loadView(view) {
 function loadDashboard(container) {
   apiCall('admin_dashboard', null, function(err, data) {
     if (err || !data || !data.summary) {
-      container.innerHTML = '<div class="empty-state"><p>Failed to load dashboard data.</p></div>';
+      container.innerHTML = '<div class="empty-state"><p>Failed to load dashboard data.</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="loadView(\'dashboard\')">Retry</button></p></div>';
       return;
     }
     var s = data.summary;
@@ -255,7 +279,7 @@ function loadCustomers(container, search) {
   var params = search ? { search: search } : {};
   apiCall('admin_customers', params, function(err, data) {
     if (err || !data) {
-      container.innerHTML = '<div class="empty-state"><p>Failed to load customers.</p></div>';
+      container.innerHTML = '<div class="empty-state"><p>Failed to load customers.</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="loadView(\'customers\')">Retry</button></p></div>';
       return;
     }
     var html = '';
