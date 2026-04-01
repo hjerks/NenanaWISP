@@ -7,7 +7,7 @@
 
 // ── Configuration ──────────────────────────────────────────
 // Replace this with your deployed Apps Script web app URL after deployment
-var APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbywAMVqrh0CdLEILWGJz62XVA8n-VWwcTWjGQ67ULV-PO143gEiqPfE3_q6Y3jUChud/exec';
 
 // ── Plan Selection ─────────────────────────────────────────
 
