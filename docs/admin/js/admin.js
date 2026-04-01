@@ -430,18 +430,65 @@ function searchCustomers() {
 function viewCustomer(custId) {
   var content = document.getElementById('content-area');
   document.getElementById('page-title').textContent = 'Customer Detail';
-  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading...</p></div>';
 
-  apiCall('admin_customer_detail', { id: custId }, function(err, data) {
-    if (err) {
-      content.innerHTML = '<div class="empty-state"><p>Failed to load customer: ' + esc(err.message) + '</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="viewCustomer(\'' + esc(custId) + '\')">Retry</button> <button class="btn btn-outline" onclick="loadView(\'customers\')">Back</button></p></div>';
-      return;
+  // Build customer detail from cached data (no separate API call needed)
+  var customersData = cachedData['admin_customers'] ? cachedData['admin_customers'].data : null;
+  var equipmentData = cachedData['admin_equipment'] ? cachedData['admin_equipment'].data : null;
+  var supportData = cachedData['admin_support'] ? cachedData['admin_support'].data : null;
+  var installsData = cachedData['admin_installs'] ? cachedData['admin_installs'].data : null;
+
+  if (!customersData) {
+    content.innerHTML = '<div class="empty-state"><p>Customer data not loaded yet.</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="refreshData()">Refresh Data</button> <button class="btn btn-outline" onclick="loadView(\'customers\')">Back</button></p></div>';
+    return;
+  }
+
+  // Find the customer in cached data
+  var c = null;
+  var customers = customersData.customers || [];
+  for (var i = 0; i < customers.length; i++) {
+    if (customers[i].stripeCustomerId === custId) {
+      c = customers[i];
+      break;
     }
-    if (!data || data.error) {
-      content.innerHTML = '<div class="empty-state"><p>Customer not found: ' + esc(data ? data.error : 'no data') + '</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="viewCustomer(\'' + esc(custId) + '\')">Retry</button> <button class="btn btn-outline" onclick="loadView(\'customers\')">Back</button></p></div>';
-      return;
-    }
-    var c = data.customer;
+  }
+
+  if (!c) {
+    content.innerHTML = '<div class="empty-state"><p>Customer not found.</p><p style="margin-top:12px;"><button class="btn btn-outline" onclick="loadView(\'customers\')">Back</button></p></div>';
+    return;
+  }
+
+  // Map customer list fields to detail format
+  var customer = {
+    'Stripe Customer ID': c.stripeCustomerId,
+    'Full Name': c.name,
+    'Email': c.email,
+    'Phone': c.phone,
+    'Service Address': c.address,
+    'Plan': c.plan,
+    'Subscription Status': c.status,
+    'Last Payment Date': c.lastPayment,
+    'Signup Date': c.signupDate,
+    'Stripe Subscription ID': '',
+    'Monthly Price': '',
+    'Portal Link': '',
+    'Last Event': '',
+    'Notes': ''
+  };
+
+  // Get related data from cache
+  var custEmail = (c.email || '').toLowerCase();
+  var equipment = (equipmentData && equipmentData.equipment || []).filter(function(eq) {
+    return (eq['Assigned To'] || '').toLowerCase() === custEmail;
+  });
+  var tickets = (supportData && supportData.tickets || []).filter(function(t) {
+    return (t['Email'] || '').toLowerCase() === custEmail;
+  });
+  var installs = (installsData && installsData.installs || []).filter(function(inst) {
+    return (inst['Email'] || '').toLowerCase() === custEmail;
+  });
+
+  var data = { customer: customer, equipment: equipment, tickets: tickets, installs: installs };
+  var c = data.customer;
     var html = '';
 
     html += '<div class="action-bar">';
