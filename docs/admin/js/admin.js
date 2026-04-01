@@ -292,7 +292,9 @@ function loadCustomers(container, search) {
     html += '</div></div></div>';
 
     // Table
-    html += '<div class="panel"><div class="panel-header"><h2>Customers (' + data.total + ')</h2></div>';
+    html += '<div class="panel"><div class="panel-header"><h2>Customers (' + data.total + ')</h2><button class="btn btn-sm btn-outline" onclick="exportCustomers()">Export CSV</button></div>';
+    // Store for export
+    window._lastCustomers = data.customers;
     if (data.customers && data.customers.length > 0) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
       html += '<tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Last Payment</th><th></th></tr>';
@@ -334,7 +336,11 @@ function viewCustomer(custId) {
     var c = data.customer;
     var html = '';
 
-    html += '<p style="margin-bottom:16px;"><button class="btn btn-sm" onclick="loadView(\'customers\')">&larr; Back to Customers</button></p>';
+    html += '<div class="action-bar">';
+    html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
+    html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
+    html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + esc(c['Stripe Customer ID']) + '" target="_blank">Open in Stripe</a>';
+    html += '</div>';
 
     // Customer info
     html += '<div class="two-col">';
@@ -405,9 +411,13 @@ function viewCustomer(custId) {
     }
     html += '</div>';
 
-    // Notes
+    // Notes (editable)
     html += '<div class="panel"><div class="panel-header"><h2>Notes</h2></div>';
-    html += '<div class="panel-body"><p style="color:#6b7280;">' + (esc(c['Notes']) || 'No notes.') + '</p></div></div>';
+    html += '<div class="panel-body">';
+    html += '<textarea id="customer-notes" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:0.88rem;resize:vertical;">' + esc(c['Notes'] || '') + '</textarea>';
+    html += '<button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
+    html += '<span id="notes-status" style="margin-left:8px;font-size:0.82rem;color:#6b7280;"></span>';
+    html += '</div></div>';
 
     content.innerHTML = html;
   });
@@ -454,7 +464,7 @@ function loadInstalls(container) {
     var html = '<div class="panel"><div class="panel-header"><h2>Installations</h2></div>';
     if (data.installs && data.installs.length > 0) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Customer</th><th>Address</th><th>Plan</th><th>Scheduled</th><th>Technician</th><th>Status</th></tr>';
+      html += '<tr><th>Customer</th><th>Address</th><th>Plan</th><th>Scheduled</th><th>Technician</th><th>Status</th><th></th></tr>';
       data.installs.forEach(function(inst) {
         html += '<tr>';
         html += '<td><strong>' + esc(inst['Customer Name']) + '</strong><br><small style="color:#6b7280;">' + esc(inst['Email']) + '</small></td>';
@@ -463,6 +473,7 @@ function loadInstalls(container) {
         html += '<td>' + formatDate(inst['Scheduled Date']) + '</td>';
         html += '<td>' + esc(inst['Technician']) + '</td>';
         html += '<td>' + badge(inst['Status']) + '</td>';
+        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editInstall(' + JSON.stringify(inst) + ')\'>Edit</button></td>';
         html += '</tr>';
       });
       html += '</table></div>';
@@ -474,6 +485,25 @@ function loadInstalls(container) {
   });
 }
 
+function editInstall(inst) {
+  showModal('Edit Installation', [
+    { label: 'Customer', type: 'static', value: inst['Customer Name'] },
+    { label: 'Scheduled Date', key: 'scheduled_date', type: 'date', value: formatDateInput(inst['Scheduled Date']) },
+    { label: 'Technician', key: 'technician', type: 'text', value: inst['Technician'] },
+    { label: 'Equipment Assigned', key: 'equipment', type: 'text', value: inst['Equipment Assigned'] },
+    { label: 'Status', key: 'status', type: 'select', value: inst['Status'], options: ['Pending', 'Scheduled', 'In Progress', 'Completed', 'Canceled'] },
+    { label: 'Completion Date', key: 'completion_date', type: 'date', value: formatDateInput(inst['Completion Date']) },
+    { label: 'Notes', key: 'notes', type: 'textarea', value: inst['Notes'] }
+  ], function(values) {
+    values.row = inst._rowNum;
+    apiCall('admin_update_install', values, function(err, data) {
+      if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
+      closeModal();
+      loadView('installs');
+    });
+  });
+}
+
 // ── Equipment View ─────────────────────────────────────────
 
 function loadEquipment(container) {
@@ -482,10 +512,10 @@ function loadEquipment(container) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load equipment.</p></div>';
       return;
     }
-    var html = '<div class="panel"><div class="panel-header"><h2>Equipment Inventory</h2></div>';
+    var html = '<div class="panel"><div class="panel-header"><h2>Equipment Inventory</h2><button class="btn btn-sm btn-success" onclick="addEquipment()">+ Add Equipment</button></div>';
     if (data.equipment && data.equipment.length > 0) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Type</th><th>Make/Model</th><th>Serial</th><th>MAC</th><th>IP</th><th>Assigned To</th><th>Status</th></tr>';
+      html += '<tr><th>Type</th><th>Make/Model</th><th>Serial</th><th>MAC</th><th>IP</th><th>Assigned To</th><th>Status</th><th></th></tr>';
       data.equipment.forEach(function(eq) {
         html += '<tr>';
         html += '<td>' + esc(eq['Device Type']) + '</td>';
@@ -495,6 +525,7 @@ function loadEquipment(container) {
         html += '<td><code>' + esc(eq['IP Address']) + '</code></td>';
         html += '<td>' + esc(eq['Assigned To']) + '</td>';
         html += '<td>' + badge(eq['Status']) + '</td>';
+        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editEquipment(' + JSON.stringify(eq) + ')\'>Edit</button></td>';
         html += '</tr>';
       });
       html += '</table></div>';
@@ -506,6 +537,42 @@ function loadEquipment(container) {
   });
 }
 
+function equipmentFields(eq) {
+  return [
+    { label: 'Device Type', key: 'device_type', type: 'select', value: eq ? eq['Device Type'] : '', options: ['CPE', 'AP', 'Router', 'Switch', 'Other'] },
+    { label: 'Make/Model', key: 'make_model', type: 'text', value: eq ? eq['Make/Model'] : '' },
+    { label: 'Serial Number', key: 'serial', type: 'text', value: eq ? eq['Serial Number'] : '' },
+    { label: 'MAC Address', key: 'mac', type: 'text', value: eq ? eq['MAC Address'] : '' },
+    { label: 'IP Address', key: 'ip', type: 'text', value: eq ? eq['IP Address'] : '' },
+    { label: 'VLAN', key: 'vlan', type: 'text', value: eq ? eq['VLAN'] : '' },
+    { label: 'Assigned To (email)', key: 'assigned_to', type: 'text', value: eq ? eq['Assigned To'] : '' },
+    { label: 'Location', key: 'location', type: 'text', value: eq ? eq['Location'] : '' },
+    { label: 'Status', key: 'status', type: 'select', value: eq ? eq['Status'] : 'Available', options: ['Available', 'Deployed', 'RMA', 'Retired'] },
+    { label: 'Notes', key: 'notes', type: 'textarea', value: eq ? eq['Notes'] : '' }
+  ];
+}
+
+function editEquipment(eq) {
+  showModal('Edit Equipment', equipmentFields(eq), function(values) {
+    values.row = eq._rowNum;
+    apiCall('admin_update_equipment', values, function(err, data) {
+      if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
+      closeModal();
+      loadView('equipment');
+    });
+  });
+}
+
+function addEquipment() {
+  showModal('Add Equipment', equipmentFields(null), function(values) {
+    apiCall('admin_create_equipment', values, function(err, data) {
+      if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
+      closeModal();
+      loadView('equipment');
+    });
+  });
+}
+
 // ── Support View ───────────────────────────────────────────
 
 function loadSupport(container) {
@@ -514,10 +581,10 @@ function loadSupport(container) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load tickets.</p></div>';
       return;
     }
-    var html = '<div class="panel"><div class="panel-header"><h2>Support Tickets</h2></div>';
+    var html = '<div class="panel"><div class="panel-header"><h2>Support Tickets</h2><button class="btn btn-sm btn-success" onclick="createTicket()">+ New Ticket</button></div>';
     if (data.tickets && data.tickets.length > 0) {
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Ticket</th><th>Customer</th><th>Date</th><th>Category</th><th>Description</th><th>Status</th></tr>';
+      html += '<tr><th>Ticket</th><th>Customer</th><th>Date</th><th>Category</th><th>Description</th><th>Status</th><th></th></tr>';
       data.tickets.forEach(function(t) {
         html += '<tr>';
         html += '<td><strong>' + esc(t['Ticket #']) + '</strong></td>';
@@ -526,6 +593,7 @@ function loadSupport(container) {
         html += '<td>' + esc(t['Category']) + '</td>';
         html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(t['Description']) + '</td>';
         html += '<td>' + badge(t['Status']) + '</td>';
+        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editTicket(' + JSON.stringify(t) + ')\'>Edit</button></td>';
         html += '</tr>';
       });
       html += '</table></div>';
@@ -534,6 +602,43 @@ function loadSupport(container) {
     }
     html += '</div>';
     container.innerHTML = html;
+  });
+}
+
+function editTicket(t) {
+  showModal('Edit Ticket ' + t['Ticket #'], [
+    { label: 'Customer', type: 'static', value: t['Customer Name'] + ' (' + t['Email'] + ')' },
+    { label: 'Category', type: 'static', value: t['Category'] },
+    { label: 'Description', type: 'static', value: t['Description'] },
+    { label: 'Status', key: 'status', type: 'select', value: t['Status'], options: ['Open', 'In Progress', 'Resolved', 'Closed'] },
+    { label: 'Resolution', key: 'resolution', type: 'textarea', value: t['Resolution'] },
+    { label: 'Resolved Date', key: 'resolved_date', type: 'date', value: formatDateInput(t['Resolved Date']) },
+    { label: 'Notes', key: 'notes', type: 'textarea', value: t['Notes'] }
+  ], function(values) {
+    values.row = t._rowNum;
+    apiCall('admin_update_support', values, function(err, data) {
+      if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
+      closeModal();
+      loadView('support');
+    });
+  });
+}
+
+function createTicket(prefillName, prefillEmail) {
+  showModal('New Support Ticket', [
+    { label: 'Customer Name', key: 'customer_name', type: 'text', value: prefillName || '' },
+    { label: 'Email', key: 'email', type: 'text', value: prefillEmail || '' },
+    { label: 'Category', key: 'category', type: 'select', value: '', options: ['Billing', 'Connectivity', 'Speed', 'Installation', 'Equipment', 'General'] },
+    { label: 'Description', key: 'description', type: 'textarea', value: '' }
+  ], function(values) {
+    if (!values.customer_name || !values.email || !values.category || !values.description) {
+      return showModalMessage('error', 'All fields are required.');
+    }
+    apiCall('admin_create_ticket', values, function(err, data) {
+      if (err || !data || !data.success) { return showModalMessage('error', 'Failed to create ticket.'); }
+      closeModal();
+      loadView('support');
+    });
   });
 }
 
@@ -574,4 +679,118 @@ function infoRow(label, value) {
   return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">' +
     '<span style="color:#6b7280;font-size:0.85rem;">' + label + '</span>' +
     '<span style="font-weight:500;">' + (value || '--') + '</span></div>';
+}
+
+function formatDateInput(val) {
+  if (!val) return '';
+  try {
+    var d = new Date(val);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().split('T')[0];
+  } catch (e) { return ''; }
+}
+
+// ── Modal System ───────────────────────────────────────────
+
+function showModal(title, fields, onSave) {
+  var html = '<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">';
+  html += '<div class="modal">';
+  html += '<div class="modal-header"><h3>' + esc(title) + '</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>';
+  html += '<div class="modal-body"><div id="modal-msg"></div>';
+
+  fields.forEach(function(f) {
+    html += '<div class="form-group">';
+    html += '<label>' + esc(f.label) + '</label>';
+    if (f.type === 'static') {
+      html += '<p style="color:#6b7280;font-size:0.88rem;margin:0;">' + esc(f.value) + '</p>';
+    } else if (f.type === 'select') {
+      html += '<select id="modal-' + f.key + '">';
+      if (!f.value) html += '<option value="">-- Select --</option>';
+      f.options.forEach(function(opt) {
+        html += '<option value="' + esc(opt) + '"' + (f.value === opt ? ' selected' : '') + '>' + esc(opt) + '</option>';
+      });
+      html += '</select>';
+    } else if (f.type === 'textarea') {
+      html += '<textarea id="modal-' + f.key + '">' + esc(f.value || '') + '</textarea>';
+    } else {
+      html += '<input type="' + (f.type || 'text') + '" id="modal-' + f.key + '" value="' + esc(f.value || '') + '">';
+    }
+    html += '</div>';
+  });
+
+  html += '</div>';
+  html += '<div class="modal-footer">';
+  html += '<button class="btn btn-outline" onclick="closeModal()">Cancel</button>';
+  html += '<button class="btn btn-primary" id="modal-save-btn">Save</button>';
+  html += '</div></div></div>';
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  document.getElementById('modal-save-btn').addEventListener('click', function() {
+    var values = {};
+    fields.forEach(function(f) {
+      if (f.type === 'static') return;
+      var el = document.getElementById('modal-' + f.key);
+      if (el) values[f.key] = el.value;
+    });
+    // Disable button to prevent double-clicks
+    this.disabled = true;
+    this.textContent = 'Saving...';
+    onSave(values);
+  });
+}
+
+function closeModal() {
+  var overlay = document.getElementById('modal-overlay');
+  if (overlay) overlay.remove();
+}
+
+function showModalMessage(type, text) {
+  var el = document.getElementById('modal-msg');
+  if (el) {
+    el.innerHTML = '<div class="modal-message ' + type + '">' + esc(text) + '</div>';
+  }
+  // Re-enable save button
+  var btn = document.getElementById('modal-save-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+}
+
+// ── Customer Notes ─────────────────────────────────────────
+
+function saveCustomerNotes(custId) {
+  var notes = document.getElementById('customer-notes').value;
+  var status = document.getElementById('notes-status');
+  status.textContent = 'Saving...';
+  apiCall('admin_update_customer_notes', { id: custId, notes: notes }, function(err, data) {
+    if (err || !data || !data.success) {
+      status.textContent = 'Failed to save.';
+      status.style.color = '#c0392b';
+    } else {
+      status.textContent = 'Saved!';
+      status.style.color = '#27ae60';
+      setTimeout(function() { status.textContent = ''; }, 3000);
+    }
+  });
+}
+
+// ── CSV Export ──────────────────────────────────────────────
+
+function exportCustomers() { if (window._lastCustomers) exportToCSV(window._lastCustomers, 'customers.csv'); }
+
+function exportToCSV(data, filename) {
+  if (!data || data.length === 0) return;
+  var headers = Object.keys(data[0]).filter(function(k) { return k !== '_rowNum'; });
+  var csv = headers.join(',') + '\n';
+  data.forEach(function(row) {
+    csv += headers.map(function(h) {
+      var val = String(row[h] || '').replace(/"/g, '""');
+      return '"' + val + '"';
+    }).join(',') + '\n';
+  });
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename || 'export.csv';
+  link.click();
+  URL.revokeObjectURL(link.href);
 }

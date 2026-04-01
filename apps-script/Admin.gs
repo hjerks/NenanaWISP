@@ -163,6 +163,15 @@ function handleAdminRequest_(e) {
     case 'admin_create_ticket':
       result = adminCreateTicket_(e.parameter);
       break;
+    case 'admin_update_customer_notes':
+      result = updateCustomerNotes_(e.parameter);
+      break;
+    case 'admin_update_equipment':
+      result = updateEquipment_(e.parameter);
+      break;
+    case 'admin_create_equipment':
+      result = createEquipment_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -395,5 +404,62 @@ function adminCreateTicket_(params) {
     return { error: 'missing_fields' };
   }
   createSupportTicket_(params.customer_name, params.email, params.category, params.description);
+  return { success: true };
+}
+
+/**
+ * Update customer notes.
+ */
+function updateCustomerNotes_(params) {
+  var custId = params.id || '';
+  if (!custId) return { error: 'missing_id' };
+
+  var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, custId);
+  if (!customerRow) return { error: 'not_found' };
+
+  writeCell_(TAB_CUSTOMERS, customerRow, C_.NOTES, params.notes || '');
+  return { success: true };
+}
+
+/**
+ * Update an equipment record.
+ */
+function updateEquipment_(params) {
+  var rowNum = parseInt(params.row, 10);
+  if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
+
+  var sheet = getSheet_(TAB_EQUIPMENT);
+  if (params.device_type) sheet.getRange(rowNum, 1).setValue(params.device_type);
+  if (params.make_model) sheet.getRange(rowNum, 2).setValue(params.make_model);
+  if (params.serial) sheet.getRange(rowNum, 3).setValue(params.serial);
+  if (params.mac) sheet.getRange(rowNum, 4).setValue(params.mac);
+  if (params.ip) sheet.getRange(rowNum, 5).setValue(params.ip);
+  if (params.vlan) sheet.getRange(rowNum, 6).setValue(params.vlan);
+  if (params.hasOwnProperty('assigned_to')) sheet.getRange(rowNum, 7).setValue(params.assigned_to);
+  if (params.location) sheet.getRange(rowNum, 9).setValue(params.location);
+  if (params.status) sheet.getRange(rowNum, 10).setValue(params.status);
+  if (params.hasOwnProperty('notes')) sheet.getRange(rowNum, 11).setValue(params.notes);
+
+  return { success: true };
+}
+
+/**
+ * Create a new equipment record.
+ */
+function createEquipment_(params) {
+  var row = [
+    params.device_type || '',
+    params.make_model || '',
+    params.serial || '',
+    params.mac || '',
+    params.ip || '',
+    params.vlan || '',
+    params.assigned_to || '',
+    params.install_date || '',
+    params.location || '',
+    params.status || 'Available',
+    params.notes || ''
+  ];
+  appendRow_(TAB_EQUIPMENT, row);
   return { success: true };
 }
