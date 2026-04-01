@@ -433,8 +433,12 @@ function viewCustomer(custId) {
   content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading...</p></div>';
 
   apiCall('admin_customer_detail', { id: custId }, function(err, data) {
-    if (err || !data || data.error) {
-      content.innerHTML = '<div class="empty-state"><p>Customer not found.</p></div>';
+    if (err) {
+      content.innerHTML = '<div class="empty-state"><p>Failed to load customer: ' + esc(err.message) + '</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="viewCustomer(\'' + esc(custId) + '\')">Retry</button> <button class="btn btn-outline" onclick="loadView(\'customers\')">Back</button></p></div>';
+      return;
+    }
+    if (!data || data.error) {
+      content.innerHTML = '<div class="empty-state"><p>Customer not found: ' + esc(data ? data.error : 'no data') + '</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="viewCustomer(\'' + esc(custId) + '\')">Retry</button> <button class="btn btn-outline" onclick="loadView(\'customers\')">Back</button></p></div>';
       return;
     }
     var c = data.customer;
