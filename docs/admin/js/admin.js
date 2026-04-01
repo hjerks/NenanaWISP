@@ -684,6 +684,9 @@ function editInstall(inst) {
     apiCall('admin_update_install', values, function(err, data) {
       if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
       closeModal();
+      delete cachedData['admin_installs'];
+      delete cachedData['admin_dashboard'];
+      delete cachedData['admin_customers'];
       loadView('installs');
     });
   });
