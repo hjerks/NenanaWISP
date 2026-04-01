@@ -183,7 +183,11 @@ function createCheckoutSession_(opts) {
     'metadata[plan]': opts.planName,
     'subscription_data[metadata][row_key]': opts.rowKey,
     'subscription_data[metadata][email]': opts.email,
-    'subscription_data[metadata][plan]': opts.planName
+    'subscription_data[metadata][plan]': opts.planName,
+    // Start with a 30-day trial so customer isn't charged until install is complete.
+    // The trial is ended early (triggering first charge) when install is marked "Completed".
+    'subscription_data[trial_period_days]': '30',
+    'payment_method_collection': 'always'
   };
 
   // Optional one-time installation fee

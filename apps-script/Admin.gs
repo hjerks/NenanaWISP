@@ -399,6 +399,32 @@ function updateInstall_(params) {
   if (params.completion_date) sheet.getRange(rowNum, 10).setValue(params.completion_date);
   if (params.notes) sheet.getRange(rowNum, 11).setValue(params.notes);
 
+  // When install is marked "Completed", end the Stripe trial to start billing
+  if (params.status === 'Completed') {
+    try {
+      var email = sheet.getRange(rowNum, 2).getValue(); // Email column
+      var customerRow = findRow_(TAB_CUSTOMERS, C_.EMAIL, String(email).toLowerCase());
+      if (customerRow) {
+        var custData = readRow_(TAB_CUSTOMERS, customerRow, CUSTOMERS_HEADERS.length);
+        var subId = custData[C_.STRIPE_SUB_ID - 1];
+        if (subId) {
+          // End trial immediately -- triggers first charge
+          var secret = prop('STRIPE_SECRET_KEY');
+          UrlFetchApp.fetch('https://api.stripe.com/v1/subscriptions/' + subId, {
+            method: 'post',
+            headers: { 'Authorization': 'Bearer ' + secret },
+            payload: { 'trial_end': 'now' },
+            muteHttpExceptions: true
+          });
+          Logger.log('Ended trial for ' + email + ' (install completed)');
+        }
+      }
+    } catch (e) {
+      Logger.log('Failed to end trial on install completion: ' + e.message);
+      // Non-critical -- don't fail the install update
+    }
+  }
+
   return { success: true };
 }
 
