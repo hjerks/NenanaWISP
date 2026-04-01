@@ -489,15 +489,15 @@ function viewCustomer(custId) {
   };
 
   // Get related data from cache
-  var custEmail = (c.email || '').toLowerCase();
+  var custEmail = String(c.email || '').toLowerCase();
   var equipment = (equipmentData && equipmentData.equipment || []).filter(function(eq) {
-    return (eq['Assigned To'] || '').toLowerCase() === custEmail;
+    return String(eq['Assigned To'] || '').toLowerCase() === custEmail;
   });
   var tickets = (supportData && supportData.tickets || []).filter(function(t) {
-    return (t['Email'] || '').toLowerCase() === custEmail;
+    return String(t['Email'] || '').toLowerCase() === custEmail;
   });
   var installs = (installsData && installsData.installs || []).filter(function(inst) {
-    return (inst['Email'] || '').toLowerCase() === custEmail;
+    return String(inst['Email'] || '').toLowerCase() === custEmail;
   });
 
   var data = { customer: customer, equipment: equipment, tickets: tickets, installs: installs };
