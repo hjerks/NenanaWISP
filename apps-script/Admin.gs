@@ -41,12 +41,25 @@ function handleAdminAuth_(e) {
   // Generate signed token
   var token = generateAdminToken_(user);
 
-  // Redirect back to admin page with token
+  // Redirect back to admin page with token.
+  // Apps Script HtmlService runs inside a sandboxed iframe, so a plain
+  // window.location.href only navigates the iframe -- the user appears
+  // "stuck" at script.google.com. Use window.top.location.href to navigate
+  // the parent frame back to nnabroadband.com, with a visible link as
+  // a manual fallback if the browser blocks the script.
   if (redirectUrl) {
+    var safeUrl = sanitize_(redirectUrl) + '#token=' + token;
     return HtmlService.createHtmlOutput(
-      '<html><head><script>' +
-      'window.location.href = "' + sanitize_(redirectUrl) + '#token=' + token + '";' +
-      '</script></head><body><p>Redirecting...</p></body></html>'
+      '<!DOCTYPE html><html><head>' +
+      '<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;text-align:center;padding:48px;color:#1f2937;}a{color:#1a5276;font-weight:600;}</style>' +
+      '<script>' +
+      'var t = ' + JSON.stringify(safeUrl) + ';' +
+      'try { (window.top || window).location.href = t; } catch (e) { window.location.href = t; }' +
+      '</script>' +
+      '</head><body>' +
+      '<p>Signing you in...</p>' +
+      '<p style="margin-top:16px;"><a href="' + safeUrl + '" target="_top">Click here if you are not redirected automatically</a></p>' +
+      '</body></html>'
     );
   }
 
