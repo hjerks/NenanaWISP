@@ -614,17 +614,21 @@ function viewCustomer(custId) {
   var c = data.customer;
   var html = '';
 
+  var custIdEsc = esc(c['Stripe Customer ID']);
+  var nameEscJs = esc(c['Full Name']).replace(/'/g, "\\'");
+  var planEscJs = esc(c['Plan'] || '').replace(/'/g, "\\'");
   html += '<div class="action-bar">';
   html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
-  html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
-  html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + esc(c['Stripe Customer ID']) + '" target="_blank">Open in Stripe</a>';
+  html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + nameEscJs + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
+  html += '<button class="btn btn-sm btn-outline" onclick="changePlan(\'' + custIdEsc + '\',\'' + nameEscJs + '\',\'' + planEscJs + '\')">Change Plan</button>';
+  html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + custIdEsc + '" target="_blank">Open in Stripe</a>';
   var subStatus = c['Subscription Status'];
   if (subStatus === 'active' || subStatus === 'past_due') {
-    html += '<button class="btn btn-sm btn-danger" onclick="suspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Suspend Service</button>';
+    html += '<button class="btn btn-sm btn-danger" onclick="suspendCustomer(\'' + custIdEsc + '\', \'' + nameEscJs + '\')">Suspend Service</button>';
   } else if (subStatus === 'suspended') {
-    html += '<button class="btn btn-sm btn-success" onclick="unsuspendCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Restore Service</button>';
+    html += '<button class="btn btn-sm btn-success" onclick="unsuspendCustomer(\'' + custIdEsc + '\', \'' + nameEscJs + '\')">Restore Service</button>';
   }
-  html += '<button class="btn btn-sm btn-danger" onclick="deleteCustomer(\'' + esc(c['Stripe Customer ID']) + '\', \'' + esc(c['Full Name']).replace(/'/g, "\\'") + '\')">Delete</button>';
+  html += '<button class="btn btn-sm btn-danger" onclick="deleteCustomer(\'' + custIdEsc + '\', \'' + nameEscJs + '\')">Delete</button>';
   html += '</div>';
 
   // Customer info
@@ -646,6 +650,11 @@ function viewCustomer(custId) {
   html += infoRow('Last Payment', formatDate(c['Last Payment Date']));
   html += infoRow('Last Event', c['Last Event']);
   html += '</div></div>';
+  html += '</div>';
+
+  // Payment History (lazy-loaded from Stripe)
+  html += '<div class="panel"><div class="panel-header"><h2>Payment History</h2><span style="font-size:0.78rem;color:#9ca3af;">Live from Stripe</span></div>';
+  html += '<div id="payment-history" class="panel-body"><div class="loading"><div class="loading-spinner"></div><p>Loading payment history...</p></div></div>';
   html += '</div>';
 
   // Equipment
@@ -706,6 +715,96 @@ function viewCustomer(custId) {
   html += '</div></div></div>';
 
   content.innerHTML = html;
+
+  // Lazy-load payment history from Stripe (slow API call, runs in background)
+  loadPaymentHistory(custId);
+}
+
+// ── Plan Change ────────────────────────────────────────────
+
+var PLAN_OPTIONS = [
+  'Residential 50/10 Mbps',
+  'Residential 100/20 Mbps',
+  'Business 100/100 Mbps'
+];
+
+function changePlan(custId, name, currentPlan) {
+  showModal('Change Plan for ' + name, [
+    { label: 'Current Plan', type: 'static', value: currentPlan || '(none)' },
+    { label: 'New Plan', key: 'plan', type: 'select', value: '', options: PLAN_OPTIONS },
+    { label: 'Note', type: 'static', value: 'The Stripe subscription will be updated immediately with prorated charges/credits for the partial billing period.' }
+  ], function(values) {
+    if (!values.plan) return showModalMessage('error', 'Pick a new plan.');
+    if (values.plan === currentPlan) return showModalMessage('error', 'That is already the current plan.');
+    apiCall('admin_change_plan', { id: custId, plan: values.plan }, function(err, data) {
+      if (err || !data || !data.success) {
+        return showModalMessage('error', 'Failed: ' + (data ? (data.message || data.error) : err.message));
+      }
+      closeModal();
+      toast('success', 'Plan changed to ' + values.plan);
+      delete cachedData['admin_customers'];
+      delete cachedData['admin_dashboard'];
+      // Refresh customer detail with the new plan/price
+      apiCall('admin_customers', null, function() { viewCustomer(custId); });
+    });
+  });
+}
+
+// ── Payment History ────────────────────────────────────────
+
+var paymentHistoryCache = {};
+
+function loadPaymentHistory(custId) {
+  var el = document.getElementById('payment-history');
+  if (!el) return;
+  // Use cached result if it's recent (under 60s) so quick navigation
+  // back-and-forth doesn't burn Stripe API quota
+  var cached = paymentHistoryCache[custId];
+  if (cached && (Date.now() - cached.time < 60000)) {
+    renderPaymentHistory(cached.data);
+    return;
+  }
+  apiCall('admin_customer_payments', { id: custId }, function(err, data) {
+    if (err || !data || data.error) {
+      var msg = err ? err.message : (data && (data.message || data.error)) || 'Could not load.';
+      var elNow = document.getElementById('payment-history');
+      if (elNow) {
+        elNow.className = 'panel-body';
+        elNow.innerHTML = '<div class="empty-state" style="padding:20px;"><p>Could not load payment history: ' + esc(msg) + '</p></div>';
+      }
+      return;
+    }
+    paymentHistoryCache[custId] = { data: data, time: Date.now() };
+    renderPaymentHistory(data);
+  });
+}
+
+function renderPaymentHistory(data) {
+  var el = document.getElementById('payment-history');
+  if (!el) return;
+  var invoices = (data && data.invoices) || [];
+  if (!invoices.length) {
+    el.className = 'panel-body';
+    el.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No invoices yet.</p></div>';
+    return;
+  }
+  el.className = 'panel-body no-pad';
+  var html = '<table class="data-table">';
+  html += '<tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Status</th><th></th></tr>';
+  invoices.forEach(function(inv) {
+    var amount = inv.status === 'paid' ? inv.amount : (inv.amountDue || inv.amount);
+    html += '<tr>';
+    html += '<td>' + formatDate(inv.created) + '</td>';
+    html += '<td>' + esc(inv.number || inv.id) + '</td>';
+    html += '<td>$' + Number(amount || 0).toFixed(2) + '</td>';
+    html += '<td>' + badge(inv.status) + '</td>';
+    html += '<td>';
+    if (inv.hostedUrl) html += '<a class="btn btn-sm btn-outline" href="' + esc(inv.hostedUrl) + '" target="_blank">View</a> ';
+    if (inv.pdfUrl) html += '<a class="btn btn-sm btn-outline" href="' + esc(inv.pdfUrl) + '" target="_blank">PDF</a>';
+    html += '</td></tr>';
+  });
+  html += '</table>';
+  el.innerHTML = html;
 }
 
 // ── Leads View ─────────────────────────────────────────────
@@ -738,6 +837,9 @@ function loadLeads(container) {
         html += '<td>' + badge(l['Lead Status']) + '</td>';
         html += '<td><div class="btn-group">';
         html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + JSON.stringify(l) + ')\'>Edit</button>';
+        if (l['Lead Status'] !== 'Paid') {
+          html += '<button class="btn btn-sm btn-success" onclick=\'convertLeadManual(' + l._rowNum + ', ' + JSON.stringify(l['Full Name'] || '') + ')\'>Mark Paid</button>';
+        }
         if (l['Lead Status'] === 'Checkout Sent') {
           html += '<button class="btn btn-sm btn-primary" onclick=\'resendCheckout(' + l._rowNum + ')\'>Resend</button>';
           if (l['Checkout Link']) {
@@ -900,11 +1002,29 @@ function equipmentFields(eq) {
     { label: 'MAC Address', key: 'mac', type: 'text', value: eq ? eq['MAC Address'] : '' },
     { label: 'IP Address', key: 'ip', type: 'text', value: eq ? eq['IP Address'] : '' },
     { label: 'VLAN', key: 'vlan', type: 'text', value: eq ? eq['VLAN'] : '' },
-    { label: 'Assigned To (email)', key: 'assigned_to', type: 'text', value: eq ? eq['Assigned To'] : '' },
+    { label: 'Assigned To', key: 'assigned_to', type: 'select', value: eq ? eq['Assigned To'] : '', options: customerEmailOptions() },
     { label: 'Location', key: 'location', type: 'text', value: eq ? eq['Location'] : '' },
     { label: 'Status', key: 'status', type: 'select', value: eq ? eq['Status'] : 'Available', options: ['Available', 'Deployed', 'RMA', 'Retired'] },
     { label: 'Notes', key: 'notes', type: 'textarea', value: eq ? eq['Notes'] : '' }
   ];
+}
+
+/**
+ * Build dropdown options from cached customer list for equipment-assignment
+ * fields. First option is "(Unassigned)" so equipment can be left unassigned
+ * or freed from a customer. Sorted alphabetically by name.
+ */
+function customerEmailOptions() {
+  var opts = [{ value: '', label: '(Unassigned)' }];
+  var data = cachedData['admin_customers'] && cachedData['admin_customers'].data;
+  if (!data || !data.customers) return opts;
+  var customers = data.customers.slice().sort(function(a, b) {
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+  customers.forEach(function(c) {
+    if (c.email) opts.push({ value: c.email, label: (c.name || c.email) + ' \u2014 ' + c.email });
+  });
+  return opts;
 }
 
 function editEquipment(eq) {
@@ -1284,9 +1404,19 @@ function showModal(title, fields, onSave) {
       html += '<p style="color:#6b7280;font-size:0.88rem;margin:0;">' + esc(f.value) + '</p>';
     } else if (f.type === 'select') {
       html += '<select id="modal-' + f.key + '">';
-      if (!f.value) html += '<option value="">-- Select --</option>';
+      // Skip the default placeholder if the field provides its own first
+      // option (e.g., "(Unassigned)") or if a value is already selected.
+      var hasOwnPlaceholder = f.options.length > 0 && (
+        typeof f.options[0] === 'object'
+          ? (f.options[0].value === '' || f.options[0].value === null || f.options[0].value === undefined)
+          : f.options[0] === ''
+      );
+      if (!f.value && !hasOwnPlaceholder) html += '<option value="">-- Select --</option>';
       f.options.forEach(function(opt) {
-        html += '<option value="' + esc(opt) + '"' + (f.value === opt ? ' selected' : '') + '>' + esc(opt) + '</option>';
+        var v = (typeof opt === 'object') ? opt.value : opt;
+        var l = (typeof opt === 'object') ? opt.label : opt;
+        var selected = (String(f.value) === String(v)) ? ' selected' : '';
+        html += '<option value="' + esc(v) + '"' + selected + '>' + esc(l) + '</option>';
       });
       html += '</select>';
     } else if (f.type === 'textarea') {
@@ -1493,7 +1623,7 @@ function addCustomerManual() {
     { label: 'Email', key: 'email', type: 'text', value: '' },
     { label: 'Phone', key: 'phone', type: 'text', value: '' },
     { label: 'Service Address', key: 'address', type: 'text', value: '' },
-    { label: 'Plan', key: 'plan', type: 'select', value: '', options: ['Residential 50/10 Mbps', 'Residential 100/20 Mbps', 'Business 100/100 Mbps'] },
+    { label: 'Plan', key: 'plan', type: 'select', value: '', options: PLAN_OPTIONS },
     { label: 'Notes', key: 'notes', type: 'textarea', value: '' }
   ], function(values) {
     if (!values.full_name || !values.email || !values.plan) {
@@ -1528,6 +1658,31 @@ function editLead(lead) {
       if (err || !data || !data.success) { return showModalMessage('error', 'Failed to save.'); }
       closeModal();
       delete cachedData['admin_leads'];
+      loadView('leads');
+    });
+  });
+}
+
+function convertLeadManual(rowNum, name) {
+  showModal('Mark Paid (Manual) — ' + name, [
+    { label: 'About', type: 'static', value: 'Use this when the customer paid via cash, check, or another method outside Stripe Checkout. The lead becomes a customer and an install row is created. No Stripe subscription is created — recurring billing must be handled separately.' },
+    { label: 'Payment Method', key: 'payment_method', type: 'select', value: 'cash', options: ['cash', 'check', 'stripe terminal', 'other'] },
+    { label: 'Initial Payment Amount (optional, recorded in notes)', key: 'paid_amount', type: 'text', value: '' }
+  ], function(values) {
+    apiCall('admin_convert_lead_manual', {
+      row: rowNum,
+      payment_method: values.payment_method || 'manual',
+      paid_amount: values.paid_amount || ''
+    }, function(err, data) {
+      if (err || !data || !data.success) {
+        return showModalMessage('error', 'Failed: ' + (data ? (data.message || data.error) : err.message));
+      }
+      closeModal();
+      toast('success', name + ' converted to customer');
+      delete cachedData['admin_leads'];
+      delete cachedData['admin_customers'];
+      delete cachedData['admin_dashboard'];
+      delete cachedData['admin_installs'];
       loadView('leads');
     });
   });

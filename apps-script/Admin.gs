@@ -206,6 +206,15 @@ function handleAdminRequest_(e) {
     case 'admin_delete_customer':
       result = deleteCustomer_(e.parameter);
       break;
+    case 'admin_change_plan':
+      result = changePlan_(e.parameter);
+      break;
+    case 'admin_customer_payments':
+      result = getCustomerPayments_(e.parameter);
+      break;
+    case 'admin_convert_lead_manual':
+      result = convertLeadManual_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -810,6 +819,213 @@ function deleteLead_(params) {
 
   var sheet = getSheet_(TAB_LEADS);
   sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Deleted');
+
+  return { success: true };
+}
+
+// ── Plan Change ────────────────────────────────────────────
+
+/**
+ * Change a customer's plan -- updates the Stripe subscription to the new
+ * price (with prorations) and updates the sheet's Plan and Monthly Price
+ * columns. Requires an active Stripe subscription.
+ */
+function changePlan_(params) {
+  var custId = params.id || '';
+  var newPlan = params.plan || '';
+  if (!custId || !newPlan) return { error: 'missing_params', message: 'Customer ID and new plan are required.' };
+
+  var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, custId);
+  if (!customerRow) return { error: 'not_found' };
+
+  var customerData = readRow_(TAB_CUSTOMERS, customerRow, CUSTOMERS_HEADERS.length);
+  var subId = customerData[C_.STRIPE_SUB_ID - 1];
+  var currentPlan = customerData[C_.PLAN - 1];
+
+  if (newPlan === currentPlan) {
+    return { error: 'same_plan', message: 'Customer is already on this plan.' };
+  }
+
+  if (!subId) {
+    // No Stripe subscription -- just update the sheet (manual customer)
+    var amt = 0;
+    try { amt = getMonthlyAmountForPlan_(newPlan); } catch (e) {}
+    writeCell_(TAB_CUSTOMERS, customerRow, C_.PLAN, newPlan);
+    if (amt) writeCell_(TAB_CUSTOMERS, customerRow, C_.MONTHLY_PRICE, amt);
+    writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_EVENT, 'plan_changed_manual');
+    return { success: true, newAmount: amt, manual: true };
+  }
+
+  var newPriceId;
+  try { newPriceId = getPriceIdForPlan_(newPlan); }
+  catch (e) { return { error: 'invalid_plan', message: e.message }; }
+
+  try {
+    // Look up the current subscription item ID (Stripe needs this to update the price)
+    var sub = stripeGet_('/v1/subscriptions/' + subId);
+    if (!sub.items || !sub.items.data || !sub.items.data[0]) {
+      return { error: 'no_sub_items', message: 'Subscription has no items.' };
+    }
+    var itemId = sub.items.data[0].id;
+
+    // Update the subscription item with the new price.
+    // proration_behavior=create_prorations issues a prorated charge/credit
+    // immediately for the partial billing period.
+    var updated = stripeRequest_('/v1/subscriptions/' + subId, 'post', {
+      'items[0][id]': itemId,
+      'items[0][price]': newPriceId,
+      'proration_behavior': 'create_prorations'
+    });
+
+    var newAmount = (updated.items.data[0].price.unit_amount || 0) / 100;
+
+    writeCell_(TAB_CUSTOMERS, customerRow, C_.PLAN, newPlan);
+    writeCell_(TAB_CUSTOMERS, customerRow, C_.MONTHLY_PRICE, newAmount);
+    writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_EVENT, 'plan_changed');
+
+    return { success: true, newAmount: newAmount };
+  } catch (e) {
+    Logger.log('changePlan error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+/**
+ * Look up the monthly dollar amount for a plan by querying its Stripe price.
+ * Used when we need to record price for a customer without a live subscription.
+ */
+function getMonthlyAmountForPlan_(planName) {
+  var priceId = getPriceIdForPlan_(planName);
+  var price = stripeGet_('/v1/prices/' + priceId);
+  return (price.unit_amount || 0) / 100;
+}
+
+// ── Payment History ────────────────────────────────────────
+
+/**
+ * Fetch the most recent invoices for a customer from Stripe.
+ * Returns up to 20 invoices ordered newest first.
+ */
+function getCustomerPayments_(params) {
+  var custId = params.id || '';
+  if (!custId) return { error: 'missing_id' };
+
+  try {
+    var data = stripeGet_('/v1/invoices?customer=' + encodeURIComponent(custId) + '&limit=20');
+    var invoices = (data.data || []).map(function(inv) {
+      var st = inv.status_transitions || {};
+      return {
+        id: inv.id,
+        number: inv.number || '',
+        status: inv.status,                    // draft, open, paid, void, uncollectible
+        amount: (inv.amount_paid || 0) / 100,
+        amountDue: (inv.amount_due || 0) / 100,
+        currency: inv.currency || 'usd',
+        created: (inv.created || 0) * 1000,
+        paidAt: st.paid_at ? st.paid_at * 1000 : null,
+        hostedUrl: inv.hosted_invoice_url || '',
+        pdfUrl: inv.invoice_pdf || ''
+      };
+    });
+    return { invoices: invoices };
+  } catch (e) {
+    Logger.log('getCustomerPayments error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+// ── Manual Lead Conversion ─────────────────────────────────
+
+/**
+ * Convert a lead to a customer manually (e.g., when payment was taken via
+ * cash, check, or external Stripe Terminal). Creates the customer + install
+ * rows but does NOT create a Stripe subscription -- billing is tracked
+ * outside the system. Operator can later add a real subscription if needed.
+ */
+function convertLeadManual_(params) {
+  var rowNum = parseInt(params.row, 10);
+  if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
+
+  var leadData = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+  var fullName = leadData[L.FULL_NAME - 1];
+  var email = leadData[L.EMAIL - 1];
+  var phone = leadData[L.PHONE - 1];
+  var address = leadData[L.ADDRESS - 1];
+  var city = leadData[L.CITY - 1];
+  var state = leadData[L.STATE - 1];
+  var zip = leadData[L.ZIP - 1];
+  var plan = leadData[L.PLAN - 1];
+  var rowKey = leadData[L.ROW_KEY - 1];
+  var stripeCustId = leadData[L.STRIPE_CUST_ID - 1] || '';
+
+  if (!email || !plan) return { error: 'missing_lead_data', message: 'Lead is missing email or plan.' };
+
+  // Check for existing customer by Stripe ID or email
+  var existing = stripeCustId ? findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, stripeCustId) : null;
+  if (!existing) existing = findRow_(TAB_CUSTOMERS, C_.EMAIL, email);
+  if (existing) {
+    return { error: 'already_customer', message: 'A customer record already exists for this email.' };
+  }
+
+  // Look up monthly price for the plan (for accurate MRR reporting)
+  var monthlyPrice = '';
+  try { monthlyPrice = getMonthlyAmountForPlan_(plan); }
+  catch (e) { Logger.log('Could not fetch price: ' + e.message); }
+
+  var fullAddress = [address, city, state, zip].filter(function(p) { return p; }).join(', ');
+  var paymentMethod = String(params.payment_method || 'manual').trim();
+  var paidAmount = String(params.paid_amount || '').trim();
+  var noteParts = ['Manually converted from lead (' + paymentMethod + ')'];
+  if (paidAmount) noteParts.push('Initial payment: $' + paidAmount);
+  noteParts.push('Converted on ' + new Date().toLocaleDateString());
+
+  ensureHeaders_(TAB_CUSTOMERS, CUSTOMERS_HEADERS);
+  var customerRow = [
+    stripeCustId,                  // Stripe Customer ID (may be blank)
+    fullName,                       // Full Name
+    email,                          // Email
+    phone,                          // Phone
+    fullAddress,                    // Service Address
+    plan,                           // Plan
+    '',                             // Stripe Subscription ID (none)
+    'active',                       // Subscription Status
+    monthlyPrice,                   // Monthly Price
+    '',                             // Portal Link
+    new Date(),                     // Signup Date
+    new Date(),                     // Last Payment Date
+    'manual_conversion',            // Last Event
+    rowKey,                         // Row Key
+    noteParts.join(' | ')           // Notes
+  ];
+  appendRow_(TAB_CUSTOMERS, customerRow);
+
+  // Create install row (Pending) so it shows up in the install workflow
+  ensureHeaders_(TAB_INSTALLS, INSTALLS_HEADERS);
+  var installRow = [
+    fullName,                                 // Customer Name
+    email,                                     // Email
+    fullAddress,                               // Service Address
+    plan,                                      // Plan
+    leadData[L.INSTALL_PREF - 1] || '',       // Requested Preference
+    '',                                        // Scheduled Date
+    '',                                        // Technician
+    '',                                        // Equipment Assigned
+    'Pending',                                 // Status
+    '',                                        // Completion Date
+    ''                                         // Notes
+  ];
+  appendRow_(TAB_INSTALLS, installRow);
+
+  // Mark the lead as Paid
+  var sheet = getSheet_(TAB_LEADS);
+  sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Paid');
+
+  // Send the welcome email so the customer has confirmation
+  try {
+    sendWelcomeEmail_(email, fullName, plan);
+  } catch (e) {
+    Logger.log('Welcome email failed (non-fatal): ' + e.message);
+  }
 
   return { success: true };
 }
