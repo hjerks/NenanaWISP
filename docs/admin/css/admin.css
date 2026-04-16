@@ -555,6 +555,14 @@ body {
 
 .badge-suspended { background: #fecaca; color: #991b1b; }
 
+/* ── Billing Method Badges ─────────────────────────────── */
+
+.badge-auto { background: #e0e7ff; color: #3730a3; }
+.badge-manual { background: #fef3c7; color: #92400e; }
+
+/* Trialing status from Stripe -- styled like Pending */
+.badge-trialing { background: #e0e7ff; color: #3730a3; }
+
 /* ── Filter Chips ──────────────────────────────────────── */
 
 .filter-chips {

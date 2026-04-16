@@ -51,7 +51,8 @@ var C_ = {
   LAST_PAYMENT:   12,
   LAST_EVENT:     13,
   ROW_KEY:        14,
-  NOTES:          15
+  NOTES:          15,
+  BILLING_METHOD: 16   // 'auto' (Stripe charges card) or 'manual' (Stripe send_invoice)
 };
 
 // ── Sheet Headers ──────────────────────────────────────────
@@ -67,7 +68,7 @@ var CUSTOMERS_HEADERS = [
   'Stripe Customer ID', 'Full Name', 'Email', 'Phone', 'Service Address',
   'Plan', 'Stripe Subscription ID', 'Subscription Status', 'Monthly Price',
   'Portal Link', 'Signup Date', 'Last Payment Date', 'Last Event',
-  'Row Key', 'Notes'
+  'Row Key', 'Notes', 'Billing Method'
 ];
 
 var INSTALLS_HEADERS = [
@@ -109,16 +110,42 @@ function getSheet_(name) {
 
 /**
  * Ensure a sheet has the correct headers in row 1.
+ *
+ * - Empty sheet: writes the full header row.
+ * - Existing sheet shorter than the schema: appends the missing trailing
+ *   headers without disturbing existing columns. This lets us add columns
+ *   to a tab in code without manual sheet edits or data loss.
+ * - Existing sheet at or beyond schema width: leaves it alone.
  */
 function ensureHeaders_(tabName, headers) {
   var sheet = getSheet_(tabName);
-  var firstRow = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  var isEmpty = firstRow.every(function(cell) { return cell === ''; });
+  var lastCol = sheet.getLastColumn();
+
+  if (lastCol === 0) {
+    // Brand-new sheet
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  // Check whether row 1 within the existing range is actually populated
+  var existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var isEmpty = existing.every(function(cell) { return cell === ''; });
   if (isEmpty) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     sheet.setFrozenRows(1);
+    return sheet;
   }
+
+  // Schema migration: add any missing trailing headers
+  if (headers.length > lastCol) {
+    var missing = headers.slice(lastCol);
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setFontWeight('bold');
+  }
+
   return sheet;
 }
 
@@ -278,9 +305,12 @@ function createCustomerFromLead_(leadRowNum, stripeSubId, subStatus) {
     new Date(),                        // Last Payment Date
     'checkout.session.completed',      // Last Event
     leadData[L.ROW_KEY - 1],          // Row Key
-    ''                                 // Notes
+    '',                                // Notes
+    'auto'                             // Billing Method (Stripe charges card automatically)
   ];
 
+  // Make sure the sheet has the Billing Method column before writing
+  ensureHeaders_(TAB_CUSTOMERS, CUSTOMERS_HEADERS);
   return appendRow_(TAB_CUSTOMERS, customerRow);
 }
 

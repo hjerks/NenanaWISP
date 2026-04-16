@@ -215,6 +215,9 @@ function handleAdminRequest_(e) {
     case 'admin_convert_lead_manual':
       result = convertLeadManual_(e.parameter);
       break;
+    case 'admin_mark_invoice_paid':
+      result = markInvoicePaid_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -307,6 +310,9 @@ function getAdminDashboard_() {
  * Customer list with optional search.
  */
 function getAdminCustomers_(params) {
+  // Run schema migration in case Billing Method column was added since
+  // this sheet was last written to.
+  ensureHeaders_(TAB_CUSTOMERS, CUSTOMERS_HEADERS);
   var customers = getDataAsObjects_(TAB_CUSTOMERS);
   var search = (params.search || '').toLowerCase().trim();
 
@@ -335,7 +341,8 @@ function getAdminCustomers_(params) {
         monthlyPrice: c['Monthly Price'],
         portalLink: c['Portal Link'],
         lastEvent: c['Last Event'],
-        notes: c['Notes']
+        notes: c['Notes'],
+        billingMethod: c['Billing Method'] || 'auto'
       };
     }),
     total: customers.length
@@ -937,10 +944,21 @@ function getCustomerPayments_(params) {
 // ── Manual Lead Conversion ─────────────────────────────────
 
 /**
- * Convert a lead to a customer manually (e.g., when payment was taken via
- * cash, check, or external Stripe Terminal). Creates the customer + install
- * rows but does NOT create a Stripe subscription -- billing is tracked
- * outside the system. Operator can later add a real subscription if needed.
+ * Convert a lead to a customer for a payment taken outside Stripe Checkout
+ * (cash, check, in-person card, etc).
+ *
+ * By default this also creates a Stripe subscription with
+ * collection_method=send_invoice so the customer is tracked in the same
+ * billing pipeline as card customers -- Stripe generates an open invoice
+ * each cycle that the operator marks paid when cash/check is received.
+ * Pass setup_billing="false" to skip subscription creation (sheet-only).
+ *
+ * Optional params:
+ *   payment_method  -- recorded in notes (cash/check/stripe terminal/other)
+ *   paid_amount     -- recorded in notes; if setup_billing is on and amount
+ *                      is provided, also recorded as a paid Stripe invoice
+ *                      so it shows up in Payment History
+ *   setup_billing   -- "true" (default) to create the Stripe subscription
  */
 function convertLeadManual_(params) {
   var rowNum = parseInt(params.row, 10);
@@ -967,35 +985,111 @@ function convertLeadManual_(params) {
     return { error: 'already_customer', message: 'A customer record already exists for this email.' };
   }
 
-  // Look up monthly price for the plan (for accurate MRR reporting)
-  var monthlyPrice = '';
-  try { monthlyPrice = getMonthlyAmountForPlan_(plan); }
-  catch (e) { Logger.log('Could not fetch price: ' + e.message); }
+  var setupBilling = String(params.setup_billing || 'true').toLowerCase() !== 'false';
+  var paymentMethod = String(params.payment_method || 'manual').trim();
+  var paidAmountStr = String(params.paid_amount || '').trim();
+  var paidAmount = parseFloat(paidAmountStr) || 0;
 
   var fullAddress = [address, city, state, zip].filter(function(p) { return p; }).join(', ');
-  var paymentMethod = String(params.payment_method || 'manual').trim();
-  var paidAmount = String(params.paid_amount || '').trim();
+
+  // Stripe subscription bookkeeping (only set when setupBilling)
+  var subId = '';
+  var subStatus = 'active';
+  var monthlyPrice = '';
+  var initialInvoiceId = '';
+
+  if (setupBilling) {
+    // Need a Stripe customer record. Create one if the lead never had a
+    // checkout session (rare -- public signup form always creates one first).
+    if (!stripeCustId) {
+      try {
+        var cust = createOrGetStripeCustomer_({
+          email: email,
+          name: fullName,
+          phone: phone,
+          address: { line1: address, city: city, state: state, zip: zip }
+        });
+        stripeCustId = cust.id;
+        // Also write back to the lead so future references match
+        var leadSheet = getSheet_(TAB_LEADS);
+        leadSheet.getRange(rowNum, L.STRIPE_CUST_ID).setValue(stripeCustId);
+      } catch (e) {
+        return { error: 'stripe_error', message: 'Could not create Stripe customer: ' + e.message };
+      }
+    }
+
+    // Create the subscription with send_invoice so Stripe generates open
+    // invoices each cycle instead of auto-charging a card. trial_period_days
+    // matches the card flow -- the trial ends when install is marked
+    // Completed (existing logic in updateInstall_).
+    var daysUntilDue = parseInt(propOr('MANUAL_INVOICE_DAYS_UNTIL_DUE', '30'), 10);
+    var trialDays = parseInt(propOr('MANUAL_TRIAL_DAYS', '30'), 10);
+    var newPriceId;
+    try { newPriceId = getPriceIdForPlan_(plan); }
+    catch (e) { return { error: 'invalid_plan', message: e.message }; }
+
+    try {
+      var sub = stripeRequest_('/v1/subscriptions', 'post', {
+        customer: stripeCustId,
+        'items[0][price]': newPriceId,
+        collection_method: 'send_invoice',
+        days_until_due: String(daysUntilDue),
+        trial_period_days: String(trialDays),
+        'metadata[row_key]': rowKey,
+        'metadata[email]': email,
+        'metadata[plan]': plan,
+        'metadata[billing_method]': 'manual',
+        'metadata[payment_method]': paymentMethod
+      });
+      subId = sub.id;
+      subStatus = sub.status || 'trialing';
+      if (sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].price) {
+        monthlyPrice = (sub.items.data[0].price.unit_amount || 0) / 100;
+      }
+    } catch (e) {
+      return { error: 'stripe_error', message: 'Could not create subscription: ' + e.message };
+    }
+
+    // Optional: record the upfront cash/check payment as a paid Stripe
+    // invoice so it appears in Payment History. Failure here is non-fatal
+    // -- the subscription is already created.
+    if (paidAmount > 0) {
+      try {
+        initialInvoiceId = recordOutOfBandPayment_(stripeCustId, paidAmount, 'Initial ' + paymentMethod + ' payment');
+      } catch (e) {
+        Logger.log('Could not record initial payment invoice (non-fatal): ' + e.message);
+      }
+    }
+  } else {
+    // Sheet-only path: just record the asserted price for MRR reporting
+    try { monthlyPrice = getMonthlyAmountForPlan_(plan); }
+    catch (e) { Logger.log('Could not fetch price: ' + e.message); }
+  }
+
   var noteParts = ['Manually converted from lead (' + paymentMethod + ')'];
-  if (paidAmount) noteParts.push('Initial payment: $' + paidAmount);
+  if (paidAmountStr) noteParts.push('Initial payment: $' + paidAmountStr);
+  if (setupBilling) noteParts.push('Stripe send_invoice subscription created (' + subId + ')');
+  else noteParts.push('No Stripe subscription -- track billing externally');
   noteParts.push('Converted on ' + new Date().toLocaleDateString());
 
   ensureHeaders_(TAB_CUSTOMERS, CUSTOMERS_HEADERS);
   var customerRow = [
-    stripeCustId,                  // Stripe Customer ID (may be blank)
+    stripeCustId,                  // Stripe Customer ID
     fullName,                       // Full Name
     email,                          // Email
     phone,                          // Phone
     fullAddress,                    // Service Address
     plan,                           // Plan
-    '',                             // Stripe Subscription ID (none)
-    'active',                       // Subscription Status
+    subId,                          // Stripe Subscription ID
+    subStatus,                      // Subscription Status
     monthlyPrice,                   // Monthly Price
     '',                             // Portal Link
     new Date(),                     // Signup Date
     new Date(),                     // Last Payment Date
-    'manual_conversion',            // Last Event
+    setupBilling ? 'manual_conversion_subscribed' : 'manual_conversion_sheet_only',
     rowKey,                         // Row Key
-    noteParts.join(' | ')           // Notes
+    noteParts.join(' | '),          // Notes
+    setupBilling ? 'manual' : 'manual_sheet_only'  // Billing Method
   ];
   appendRow_(TAB_CUSTOMERS, customerRow);
 
@@ -1027,5 +1121,77 @@ function convertLeadManual_(params) {
     Logger.log('Welcome email failed (non-fatal): ' + e.message);
   }
 
-  return { success: true };
+  return {
+    success: true,
+    subscriptionId: subId,
+    initialInvoiceId: initialInvoiceId,
+    billingMethod: setupBilling ? 'manual' : 'manual_sheet_only'
+  };
+}
+
+/**
+ * Record an out-of-band payment as a paid Stripe invoice. Used to capture
+ * upfront cash/check payments so they appear in the customer's Payment
+ * History alongside subscription invoices.
+ *
+ * Returns the created invoice ID.
+ */
+function recordOutOfBandPayment_(customerId, amount, description) {
+  // Step 1: floating invoice item (not attached to a subscription)
+  stripeRequest_('/v1/invoiceitems', 'post', {
+    customer: customerId,
+    amount: String(Math.round(amount * 100)),
+    currency: 'usd',
+    description: description || 'Manual payment'
+  });
+
+  // Step 2: create an invoice that pulls in the floating item
+  var invoice = stripeRequest_('/v1/invoices', 'post', {
+    customer: customerId,
+    collection_method: 'send_invoice',
+    days_until_due: '1',
+    auto_advance: 'false'
+  });
+
+  // Step 3: finalize so it's an actual invoice we can pay
+  stripeRequest_('/v1/invoices/' + invoice.id + '/finalize', 'post', {});
+
+  // Step 4: mark paid out of band
+  stripeRequest_('/v1/invoices/' + invoice.id + '/pay', 'post', {
+    paid_out_of_band: 'true'
+  });
+
+  return invoice.id;
+}
+
+// ── Mark Invoice Paid (for manual customers) ───────────────
+
+/**
+ * Mark a Stripe invoice as paid out-of-band. Used by the operator after
+ * receiving cash/check for a manually-billed customer's recurring invoice.
+ */
+function markInvoicePaid_(params) {
+  var invoiceId = params.invoice_id || '';
+  if (!invoiceId) return { error: 'missing_invoice_id' };
+
+  try {
+    var invoice = stripeRequest_('/v1/invoices/' + invoiceId + '/pay', 'post', {
+      paid_out_of_band: 'true'
+    });
+
+    // Optionally update the customer's Last Payment Date in the sheet
+    var custId = invoice.customer;
+    if (custId) {
+      var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, custId);
+      if (customerRow) {
+        writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_PAYMENT, new Date());
+        writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_EVENT, 'invoice_marked_paid_manual');
+      }
+    }
+
+    return { success: true, status: invoice.status };
+  } catch (e) {
+    Logger.log('markInvoicePaid error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
 }

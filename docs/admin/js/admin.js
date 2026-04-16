@@ -595,7 +595,8 @@ function viewCustomer(custId) {
     'Monthly Price': c.monthlyPrice || '',
     'Portal Link': c.portalLink || '',
     'Last Event': c.lastEvent || '',
-    'Notes': c.notes || ''
+    'Notes': c.notes || '',
+    'Billing Method': c.billingMethod || 'auto'
   };
 
   // Get related data from cache
@@ -643,6 +644,16 @@ function viewCustomer(custId) {
   html += '</div></div>';
 
   html += '<div class="panel"><div class="panel-header"><h2>Billing</h2></div><div class="panel-body">';
+  var bm = c['Billing Method'];
+  var bmDisplay;
+  if (bm === 'manual') {
+    bmDisplay = '<span class="badge badge-manual">Manual (Stripe send_invoice)</span>';
+  } else if (bm === 'manual_sheet_only') {
+    bmDisplay = '<span class="badge badge-manual">Manual (sheet only — no Stripe sub)</span>';
+  } else {
+    bmDisplay = '<span class="badge badge-auto">Auto (card on file)</span>';
+  }
+  html += infoRow('Billing Method', bmDisplay);
   html += infoRow('Status', badge(c['Subscription Status']));
   html += infoRow('Subscription ID', c['Stripe Subscription ID']);
   html += infoRow('Monthly Price', c['Monthly Price'] ? '$' + c['Monthly Price'] : '--');
@@ -753,10 +764,12 @@ function changePlan(custId, name, currentPlan) {
 // ── Payment History ────────────────────────────────────────
 
 var paymentHistoryCache = {};
+var paymentHistoryCustId = null;  // tracks the customer whose history is on screen
 
 function loadPaymentHistory(custId) {
   var el = document.getElementById('payment-history');
   if (!el) return;
+  paymentHistoryCustId = custId;
   // Use cached result if it's recent (under 60s) so quick navigation
   // back-and-forth doesn't burn Stripe API quota
   var cached = paymentHistoryCache[custId];
@@ -765,6 +778,8 @@ function loadPaymentHistory(custId) {
     return;
   }
   apiCall('admin_customer_payments', { id: custId }, function(err, data) {
+    // If the user navigated to a different customer mid-flight, drop result
+    if (paymentHistoryCustId !== custId) return;
     if (err || !data || data.error) {
       var msg = err ? err.message : (data && (data.message || data.error)) || 'Could not load.';
       var elNow = document.getElementById('payment-history');
@@ -799,12 +814,43 @@ function renderPaymentHistory(data) {
     html += '<td>$' + Number(amount || 0).toFixed(2) + '</td>';
     html += '<td>' + badge(inv.status) + '</td>';
     html += '<td>';
+    if (inv.status === 'open' || inv.status === 'past_due') {
+      html += '<button class="btn btn-sm btn-success" onclick="markInvoicePaid(\'' + esc(inv.id) + '\', \'' + esc(inv.number || inv.id) + '\')">Mark Paid</button> ';
+    }
     if (inv.hostedUrl) html += '<a class="btn btn-sm btn-outline" href="' + esc(inv.hostedUrl) + '" target="_blank">View</a> ';
     if (inv.pdfUrl) html += '<a class="btn btn-sm btn-outline" href="' + esc(inv.pdfUrl) + '" target="_blank">PDF</a>';
     html += '</td></tr>';
   });
   html += '</table>';
   el.innerHTML = html;
+}
+
+/**
+ * Mark a Stripe invoice as paid out-of-band (operator received cash/check).
+ * Confirms first because it can't be undone without going to Stripe.
+ */
+function markInvoicePaid(invoiceId, displayLabel) {
+  var custId = paymentHistoryCustId;
+  confirmModal({
+    title: 'Mark invoice ' + displayLabel + ' as paid?',
+    message: 'Records this invoice as paid out-of-band in Stripe (e.g., cash or check received). The customer\'s Last Payment Date will be updated. This cannot be undone from here -- you would need to refund or void the invoice in Stripe.',
+    confirmText: 'Mark Paid',
+    onConfirm: function(done) {
+      apiCall('admin_mark_invoice_paid', { invoice_id: invoiceId }, function(err, data) {
+        if (err || !data || !data.success) {
+          done('Failed: ' + (data ? (data.message || data.error) : err.message));
+          return;
+        }
+        done();
+        toast('success', 'Invoice ' + displayLabel + ' marked paid');
+        // Bust the per-customer cache and reload
+        if (custId) delete paymentHistoryCache[custId];
+        delete cachedData['admin_customers'];
+        delete cachedData['admin_dashboard'];
+        if (custId) loadPaymentHistory(custId);
+      });
+    }
+  });
 }
 
 // ── Leads View ─────────────────────────────────────────────
@@ -1421,6 +1467,12 @@ function showModal(title, fields, onSave) {
       html += '</select>';
     } else if (f.type === 'textarea') {
       html += '<textarea id="modal-' + f.key + '">' + esc(f.value || '') + '</textarea>';
+    } else if (f.type === 'checkbox') {
+      var checked = f.value ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer;">';
+      html += '<input type="checkbox" id="modal-' + f.key + '"' + checked + ' style="width:auto;margin:0;">';
+      html += '<span style="font-size:0.88rem;">' + esc(f.checkboxLabel || '') + '</span></label>';
+      if (f.help) html += '<div style="font-size:0.78rem;color:#9ca3af;margin-top:4px;">' + esc(f.help) + '</div>';
     } else {
       html += '<input type="' + (f.type || 'text') + '" id="modal-' + f.key + '" value="' + esc(f.value || '') + '">';
     }
@@ -1440,7 +1492,9 @@ function showModal(title, fields, onSave) {
     fields.forEach(function(f) {
       if (f.type === 'static') return;
       var el = document.getElementById('modal-' + f.key);
-      if (el) values[f.key] = el.value;
+      if (!el) return;
+      if (f.type === 'checkbox') values[f.key] = el.checked ? 'true' : 'false';
+      else values[f.key] = el.value;
     });
     // Disable button to prevent double-clicks
     this.disabled = true;
@@ -1665,20 +1719,31 @@ function editLead(lead) {
 
 function convertLeadManual(rowNum, name) {
   showModal('Mark Paid (Manual) — ' + name, [
-    { label: 'About', type: 'static', value: 'Use this when the customer paid via cash, check, or another method outside Stripe Checkout. The lead becomes a customer and an install row is created. No Stripe subscription is created — recurring billing must be handled separately.' },
+    { label: 'About', type: 'static', value: 'Use when the customer paid via cash, check, or another method outside Stripe Checkout. The lead becomes a customer and an install row is created.' },
     { label: 'Payment Method', key: 'payment_method', type: 'select', value: 'cash', options: ['cash', 'check', 'stripe terminal', 'other'] },
-    { label: 'Initial Payment Amount (optional, recorded in notes)', key: 'paid_amount', type: 'text', value: '' }
+    { label: 'Initial Payment Amount', key: 'paid_amount', type: 'text', value: '' },
+    {
+      label: 'Recurring billing',
+      key: 'setup_billing',
+      type: 'checkbox',
+      value: true,
+      checkboxLabel: 'Set up Stripe subscription (send_invoice mode) — recommended',
+      help: 'Stripe will generate a monthly open invoice that you mark paid when you receive cash/check. Customers without this fall off the recurring-billing pipeline.'
+    }
   ], function(values) {
     apiCall('admin_convert_lead_manual', {
       row: rowNum,
       payment_method: values.payment_method || 'manual',
-      paid_amount: values.paid_amount || ''
+      paid_amount: values.paid_amount || '',
+      setup_billing: values.setup_billing || 'true'
     }, function(err, data) {
       if (err || !data || !data.success) {
         return showModalMessage('error', 'Failed: ' + (data ? (data.message || data.error) : err.message));
       }
       closeModal();
-      toast('success', name + ' converted to customer');
+      var msg = name + ' converted to customer';
+      if (data.billingMethod === 'manual') msg += ' (Stripe subscription created)';
+      toast('success', msg);
       delete cachedData['admin_leads'];
       delete cachedData['admin_customers'];
       delete cachedData['admin_dashboard'];
