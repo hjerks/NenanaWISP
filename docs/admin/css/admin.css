@@ -555,6 +555,55 @@ body {
 
 .badge-suspended { background: #fecaca; color: #991b1b; }
 
+/* ── Filter Chips ──────────────────────────────────────── */
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: #fafbfc;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  background: var(--color-white);
+  color: var(--color-text-light);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.filter-chip:hover {
+  border-color: var(--color-primary-light);
+  color: var(--color-text);
+}
+
+.filter-chip.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+
+.filter-chip .chip-count {
+  background: rgba(0,0,0,0.08);
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.filter-chip.active .chip-count {
+  background: rgba(255,255,255,0.2);
+}
+
 /* ── Sortable Table Headers ────────────────────────────── */
 
 .data-table th.sortable {

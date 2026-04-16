@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Set up navigation
   setupNav();
+  setupKeyboardShortcuts();
 });
 
 // ── Authentication ─────────────────────────────────────────
@@ -232,6 +233,47 @@ function setupNav() {
   }
 }
 
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', function(e) {
+    var modalOpen = !!document.getElementById('modal-overlay');
+    var inField = e.target && (
+      e.target.tagName === 'INPUT' ||
+      e.target.tagName === 'TEXTAREA' ||
+      e.target.tagName === 'SELECT' ||
+      e.target.isContentEditable
+    );
+
+    // Esc: close any open modal
+    if (e.key === 'Escape' && modalOpen) {
+      e.preventDefault();
+      closeModal();
+      return;
+    }
+
+    // Enter inside a modal (but not in textarea -- newline should still work):
+    // click the primary action button. Works for both showModal and confirmModal.
+    if (e.key === 'Enter' && modalOpen && e.target.tagName !== 'TEXTAREA') {
+      var saveBtn = document.getElementById('modal-save-btn') || document.getElementById('confirm-ok-btn');
+      if (saveBtn && !saveBtn.disabled) {
+        e.preventDefault();
+        saveBtn.click();
+      }
+      return;
+    }
+
+    // "/" focuses the search input on the customers view, only when not
+    // already typing somewhere else.
+    if (e.key === '/' && !inField && !modalOpen) {
+      var search = document.getElementById('customer-search');
+      if (search) {
+        e.preventDefault();
+        search.focus();
+        search.select();
+      }
+    }
+  });
+}
+
 function loadView(view) {
   viewingCustomerId = null;
   currentView = view;
@@ -392,58 +434,119 @@ function statCard(label, value, colorClass, isMoney) {
 // ── Customers View ─────────────────────────────────────────
 
 function loadCustomers(container, search) {
-  var params = search ? { search: search } : {};
-  getCachedOrFetch('admin_customers', params, function(err, data) {
+  // Optional `search` arg (passed by older code paths) seeds the filter state
+  // on first load so cross-view navigation can preserve a query.
+  if (typeof search === 'string') filterState.customers.search = search;
+
+  getCachedOrFetch('admin_customers', null, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load customers.</p><p style="margin-top:12px;"><button class="btn btn-primary" onclick="loadView(\'customers\')">Retry</button></p></div>';
       return;
     }
+
+    var current = filterState.customers.search;
     var html = '';
 
-    // Search bar
+    // Search bar -- now filters as you type, no Search button needed
     html += '<div class="panel"><div class="panel-body">';
     html += '<div class="search-bar">';
-    html += '<input type="text" id="customer-search" placeholder="Search by name, email, or address..." value="' + esc(search || '') + '" onkeydown="if(event.key===\'Enter\')searchCustomers()">';
-    html += '<button onclick="searchCustomers()">Search</button>';
+    html += '<input type="text" id="customer-search" placeholder="Filter by name, email, or address... (press / to focus)" value="' + esc(current) + '" oninput="onCustomerSearchInput(this.value)">';
     html += '</div></div></div>';
 
-    // Table
-    html += '<div class="panel"><div class="panel-header"><h2>Customers (' + data.total + ')</h2><div class="btn-group"><button class="btn btn-sm btn-success" onclick="addCustomerManual()">+ New Customer</button><button class="btn btn-sm btn-outline" onclick="exportCustomers()">Export CSV</button></div></div>';
-    // Store for export
-    window._lastCustomers = data.customers;
-    if (data.customers && data.customers.length > 0) {
-      var sorted = applySort(data.customers, 'customers');
-      html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr>';
-      html += sortableTh('customers', 'Name', 'name', 'text');
-      html += sortableTh('customers', 'Email', 'email', 'text');
-      html += sortableTh('customers', 'Plan', 'plan', 'text');
-      html += sortableTh('customers', 'Status', 'status', 'text');
-      html += sortableTh('customers', 'Last Payment', 'lastPayment', 'date');
-      html += '<th></th></tr>';
-      sorted.forEach(function(c) {
-        html += '<tr>';
-        html += '<td><strong>' + esc(c.name) + '</strong></td>';
-        html += '<td>' + esc(c.email) + '</td>';
-        html += '<td>' + esc(c.plan) + '</td>';
-        html += '<td>' + badge(c.status) + '</td>';
-        html += '<td>' + formatDate(c.lastPayment) + '</td>';
-        html += '<td><button class="btn btn-sm btn-primary" onclick="viewCustomer(\'' + esc(c.stripeCustomerId) + '\')">View</button></td>';
-        html += '</tr>';
-      });
-      html += '</table></div>';
-    } else {
-      html += '<div class="panel-body"><div class="empty-state"><p>No customers found.</p></div></div>';
-    }
+    // Table panel -- the table itself is in a separate div so we can
+    // re-render it on filter/sort changes without losing input focus.
+    html += '<div class="panel">';
+    html += '<div class="panel-header"><h2 id="customers-count">Customers</h2><div class="btn-group"><button class="btn btn-sm btn-success" onclick="addCustomerManual()">+ New Customer</button><button class="btn btn-sm btn-outline" onclick="exportCustomers()">Export CSV</button></div></div>';
+    html += renderFilterChips('customers', data.customers || [], function(r) { return r.status; });
+    html += '<div id="customers-table-wrap"></div>';
     html += '</div>';
 
     container.innerHTML = html;
+    refreshCustomersList();
   });
 }
 
+/**
+ * Re-render only the customers table body and the count, applying current
+ * search, status filter, and sort state from cached data. Preserves the
+ * search input's focus + cursor position.
+ */
+function refreshCustomersList() {
+  var wrap = document.getElementById('customers-table-wrap');
+  var countEl = document.getElementById('customers-count');
+  var cached = cachedData['admin_customers'] && cachedData['admin_customers'].data;
+  if (!wrap || !cached) return;
+
+  var rows = (cached.customers || []).slice();
+  var f = filterState.customers;
+
+  // Status filter
+  if (f.status && f.status !== 'all') {
+    rows = rows.filter(function(c) { return String(c.status || '') === f.status; });
+  }
+  // Search filter (client-side, instant)
+  if (f.search) {
+    var q = f.search.toLowerCase();
+    rows = rows.filter(function(c) {
+      return (c.name || '').toLowerCase().indexOf(q) !== -1 ||
+             (c.email || '').toLowerCase().indexOf(q) !== -1 ||
+             (c.address || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  rows = applySort(rows, 'customers');
+
+  // Save filtered set for CSV export
+  window._lastCustomers = rows;
+
+  if (countEl) countEl.textContent = 'Customers (' + rows.length + ')';
+
+  // Refresh chip counts (counts always reflect the unfiltered total per status)
+  // We need to re-render the chips bar too.
+  var panel = wrap.parentElement;
+  var existingChips = panel ? panel.querySelector('.filter-chips') : null;
+  if (existingChips) {
+    var chipHTML = renderFilterChips('customers', cached.customers || [], function(r) { return r.status; });
+    var temp = document.createElement('div');
+    temp.innerHTML = chipHTML;
+    existingChips.replaceWith(temp.firstElementChild);
+  }
+
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="panel-body"><div class="empty-state"><p>No customers match the current filter.</p></div></div>';
+    return;
+  }
+
+  var html = '<div class="panel-body no-pad"><table class="data-table">';
+  html += '<tr>';
+  html += sortableTh('customers', 'Name', 'name', 'text');
+  html += sortableTh('customers', 'Email', 'email', 'text');
+  html += sortableTh('customers', 'Plan', 'plan', 'text');
+  html += sortableTh('customers', 'Status', 'status', 'text');
+  html += sortableTh('customers', 'Last Payment', 'lastPayment', 'date');
+  html += '<th></th></tr>';
+  rows.forEach(function(c) {
+    html += '<tr>';
+    html += '<td><strong>' + esc(c.name) + '</strong></td>';
+    html += '<td>' + esc(c.email) + '</td>';
+    html += '<td>' + esc(c.plan) + '</td>';
+    html += '<td>' + badge(c.status) + '</td>';
+    html += '<td>' + formatDate(c.lastPayment) + '</td>';
+    html += '<td><button class="btn btn-sm btn-primary" onclick="viewCustomer(\'' + esc(c.stripeCustomerId) + '\')">View</button></td>';
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  wrap.innerHTML = html;
+}
+
+function onCustomerSearchInput(val) {
+  filterState.customers.search = String(val || '').trim();
+  refreshCustomersList();
+}
+
+// Kept for backwards compatibility -- now a no-op since search is instant.
 function searchCustomers() {
-  var search = document.getElementById('customer-search').value.trim();
-  loadCustomers(document.getElementById('content-area'), search);
+  var inp = document.getElementById('customer-search');
+  if (inp) onCustomerSearchInput(inp.value);
 }
 
 function viewCustomer(custId) {
@@ -596,9 +699,11 @@ function viewCustomer(custId) {
   // Notes (editable)
   html += '<div class="panel"><div class="panel-header"><h2>Notes</h2></div>';
   html += '<div class="panel-body">';
-  html += '<textarea id="customer-notes" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:0.88rem;resize:vertical;">' + esc(c['Notes'] || '') + '</textarea>';
-  html += '<button class="btn btn-sm btn-primary" id="save-notes-btn" style="margin-top:8px;" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
-  html += '</div></div>';
+  html += '<textarea id="customer-notes" data-cust-id="' + esc(custId) + '" data-original="' + esc(c['Notes'] || '') + '" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:0.88rem;resize:vertical;" oninput="onNotesInput()" onblur="autoSaveNotes()">' + esc(c['Notes'] || '') + '</textarea>';
+  html += '<div style="margin-top:8px;display:flex;align-items:center;gap:10px;">';
+  html += '<button class="btn btn-sm btn-primary" id="save-notes-btn" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
+  html += '<span style="font-size:0.78rem;color:#9ca3af;">Auto-saves when you click away</span>';
+  html += '</div></div></div>';
 
   content.innerHTML = html;
 }
@@ -659,36 +764,68 @@ function loadInstalls(container) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load installs.</p></div>';
       return;
     }
-    var html = '<div class="panel"><div class="panel-header"><h2>Installations</h2></div>';
-    if (data.installs && data.installs.length > 0) {
-      var sortedInstalls = applySort(data.installs, 'installs');
-      html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr>';
-      html += sortableTh('installs', 'Customer', 'Customer Name', 'text');
-      html += sortableTh('installs', 'Address', 'Service Address', 'text');
-      html += sortableTh('installs', 'Plan', 'Plan', 'text');
-      html += sortableTh('installs', 'Scheduled', 'Scheduled Date', 'date');
-      html += sortableTh('installs', 'Technician', 'Technician', 'text');
-      html += sortableTh('installs', 'Status', 'Status', 'text');
-      html += '<th></th></tr>';
-      sortedInstalls.forEach(function(inst) {
-        html += '<tr>';
-        html += '<td><strong>' + esc(inst['Customer Name']) + '</strong><br><small style="color:#6b7280;">' + esc(inst['Email']) + '</small></td>';
-        html += '<td>' + esc(inst['Service Address']) + '</td>';
-        html += '<td>' + esc(inst['Plan']) + '</td>';
-        html += '<td>' + formatDate(inst['Scheduled Date']) + '</td>';
-        html += '<td>' + esc(inst['Technician']) + '</td>';
-        html += '<td>' + badge(inst['Status']) + '</td>';
-        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editInstall(' + JSON.stringify(inst) + ')\'>Edit</button></td>';
-        html += '</tr>';
-      });
-      html += '</table></div>';
-    } else {
-      html += '<div class="panel-body"><div class="empty-state"><div class="icon">&#128295;</div><p>No installations.</p></div></div>';
-    }
+    var html = '<div class="panel">';
+    html += '<div class="panel-header"><h2 id="installs-count">Installations</h2></div>';
+    html += renderFilterChips('installs', data.installs || [], function(r) { return r['Status']; });
+    html += '<div id="installs-table-wrap"></div>';
     html += '</div>';
     container.innerHTML = html;
+    refreshInstallsList();
   });
+}
+
+function refreshInstallsList() {
+  var wrap = document.getElementById('installs-table-wrap');
+  var countEl = document.getElementById('installs-count');
+  var cached = cachedData['admin_installs'] && cachedData['admin_installs'].data;
+  if (!wrap || !cached) return;
+
+  var rows = (cached.installs || []).slice();
+  var f = filterState.installs;
+  if (f.status && f.status !== 'all') {
+    rows = rows.filter(function(r) { return String(r['Status'] || '') === f.status; });
+  }
+  rows = applySort(rows, 'installs');
+
+  if (countEl) countEl.textContent = 'Installations (' + rows.length + ')';
+
+  // Refresh chip counts
+  var panel = wrap.parentElement;
+  var existingChips = panel ? panel.querySelector('.filter-chips') : null;
+  if (existingChips) {
+    var chipHTML = renderFilterChips('installs', cached.installs || [], function(r) { return r['Status']; });
+    var temp = document.createElement('div');
+    temp.innerHTML = chipHTML;
+    existingChips.replaceWith(temp.firstElementChild);
+  }
+
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="panel-body"><div class="empty-state"><div class="icon">&#128295;</div><p>No installations match the current filter.</p></div></div>';
+    return;
+  }
+
+  var html = '<div class="panel-body no-pad"><table class="data-table">';
+  html += '<tr>';
+  html += sortableTh('installs', 'Customer', 'Customer Name', 'text');
+  html += sortableTh('installs', 'Address', 'Service Address', 'text');
+  html += sortableTh('installs', 'Plan', 'Plan', 'text');
+  html += sortableTh('installs', 'Scheduled', 'Scheduled Date', 'date');
+  html += sortableTh('installs', 'Technician', 'Technician', 'text');
+  html += sortableTh('installs', 'Status', 'Status', 'text');
+  html += '<th></th></tr>';
+  rows.forEach(function(inst) {
+    html += '<tr>';
+    html += '<td><strong>' + esc(inst['Customer Name']) + '</strong><br><small style="color:#6b7280;">' + esc(inst['Email']) + '</small></td>';
+    html += '<td>' + esc(inst['Service Address']) + '</td>';
+    html += '<td>' + esc(inst['Plan']) + '</td>';
+    html += '<td>' + formatDate(inst['Scheduled Date']) + '</td>';
+    html += '<td>' + esc(inst['Technician']) + '</td>';
+    html += '<td>' + badge(inst['Status']) + '</td>';
+    html += '<td><button class="btn btn-sm btn-outline" onclick=\'editInstall(' + JSON.stringify(inst) + ')\'>Edit</button></td>';
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  wrap.innerHTML = html;
 }
 
 function editInstall(inst) {
@@ -869,6 +1006,61 @@ var sortState = {
   equipment: { key: null, dir: 'asc', type: 'text' }
 };
 
+// Persistent filter state per view. status='all' means no status filter.
+var filterState = {
+  customers: { search: '', status: 'all' },
+  installs: { status: 'all' }
+};
+
+// Status options for the filter chips. Order is what shows in the UI.
+var STATUS_OPTIONS = {
+  customers: [
+    { value: 'all', label: 'All' },
+    { value: 'active', label: 'Active' },
+    { value: 'past_due', label: 'Past Due' },
+    { value: 'suspended', label: 'Suspended' },
+    { value: 'canceled', label: 'Canceled' }
+  ],
+  installs: [
+    { value: 'all', label: 'All' },
+    { value: 'Pending', label: 'Pending' },
+    { value: 'Scheduled', label: 'Scheduled' },
+    { value: 'In Progress', label: 'In Progress' },
+    { value: 'Completed', label: 'Completed' },
+    { value: 'Canceled', label: 'Canceled' }
+  ]
+};
+
+/**
+ * Render the filter-chips bar for a view. `getStatus` extracts the status
+ * field from a row (since customers use `status` and installs use `Status`).
+ */
+function renderFilterChips(view, rows, getStatus) {
+  var opts = STATUS_OPTIONS[view];
+  var current = filterState[view].status;
+  // Build counts: total per status value
+  var counts = { all: rows.length };
+  rows.forEach(function(r) {
+    var s = getStatus(r);
+    if (s) counts[s] = (counts[s] || 0) + 1;
+  });
+  var html = '<div class="filter-chips">';
+  opts.forEach(function(o) {
+    var active = (current === o.value) ? ' active' : '';
+    var count = counts[o.value] || 0;
+    html += '<span class="filter-chip' + active + '" onclick="setStatusFilter(\'' + view + '\', \'' + esc(o.value) + '\')">' +
+      esc(o.label) + ' <span class="chip-count">' + count + '</span></span>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function setStatusFilter(view, status) {
+  filterState[view].status = status;
+  if (view === 'customers') return refreshCustomersList();
+  if (view === 'installs') return refreshInstallsList();
+}
+
 /**
  * Render a sortable <th>. The view name maps to sortState; the key is the
  * field on each row used for comparison; type is text/date/number.
@@ -891,14 +1083,11 @@ function setSort(view, key, type) {
     s.dir = 'asc';
     s.type = type || 'text';
   }
-  // Re-render the current view, preserving search if applicable
-  if (view === 'customers') {
-    var inp = document.getElementById('customer-search');
-    var search = inp ? inp.value.trim() : '';
-    loadCustomers(document.getElementById('content-area'), search);
-  } else {
-    loadView(view);
-  }
+  // Customers and installs support partial table refresh so the filter
+  // chips, search input, and focus state are preserved.
+  if (view === 'customers') return refreshCustomersList();
+  if (view === 'installs') return refreshInstallsList();
+  loadView(view);
 }
 
 /**
@@ -1147,28 +1336,79 @@ function showModalMessage(type, text) {
 
 // ── Customer Notes ─────────────────────────────────────────
 
+var notesAutoSaveTimer = null;
+
+/**
+ * Called on every keystroke in the notes textarea. Debounces and triggers
+ * autoSaveNotes after 1.5s of inactivity.
+ */
+function onNotesInput() {
+  if (notesAutoSaveTimer) clearTimeout(notesAutoSaveTimer);
+  notesAutoSaveTimer = setTimeout(autoSaveNotes, 1500);
+}
+
+/**
+ * Auto-save fires on blur and on debounced input. Only saves if the
+ * textarea value differs from the last-known-saved value (data-original).
+ * Silent on success (subtle toast) to avoid feeling noisy.
+ */
+function autoSaveNotes() {
+  if (notesAutoSaveTimer) { clearTimeout(notesAutoSaveTimer); notesAutoSaveTimer = null; }
+  var ta = document.getElementById('customer-notes');
+  if (!ta) return;
+  var current = ta.value;
+  var baseline = ta.getAttribute('data-original') || '';
+  if (current === baseline) return;
+  var custId = ta.getAttribute('data-cust-id');
+  if (!custId) return;
+  apiCall('admin_update_customer_notes', { id: custId, notes: current }, function(err, data) {
+    if (err || !data || !data.success) {
+      toast('error', 'Failed to auto-save notes');
+      return;
+    }
+    // Update baseline so we don't re-save the same value
+    if (ta) ta.setAttribute('data-original', current);
+    updateCachedNotes(custId, current);
+    toast('success', 'Notes saved');
+  });
+}
+
+/**
+ * Manual save button -- bypasses the debounce and always pushes the
+ * current value, with explicit button feedback.
+ */
 function saveCustomerNotes(custId) {
-  var notes = document.getElementById('customer-notes').value;
+  if (notesAutoSaveTimer) { clearTimeout(notesAutoSaveTimer); notesAutoSaveTimer = null; }
+  var ta = document.getElementById('customer-notes');
+  if (!ta) return;
+  var notes = ta.value;
   var btn = document.getElementById('save-notes-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   apiCall('admin_update_customer_notes', { id: custId, notes: notes }, function(err, data) {
     if (btn) { btn.disabled = false; btn.textContent = 'Save Notes'; }
     if (err || !data || !data.success) {
       toast('error', 'Failed to save notes');
-    } else {
-      toast('success', 'Notes saved');
-      // Update cached customer data so reopens reflect the new notes
-      var customersData = cachedData['admin_customers'] && cachedData['admin_customers'].data;
-      if (customersData && customersData.customers) {
-        for (var i = 0; i < customersData.customers.length; i++) {
-          if (customersData.customers[i].stripeCustomerId === custId) {
-            customersData.customers[i].notes = notes;
-            break;
-          }
-        }
-      }
+      return;
     }
+    if (ta) ta.setAttribute('data-original', notes);
+    updateCachedNotes(custId, notes);
+    toast('success', 'Notes saved');
   });
+}
+
+/**
+ * Keep the cached customer record in sync so reopening the detail
+ * page shows the latest notes without an extra round-trip.
+ */
+function updateCachedNotes(custId, notes) {
+  var customersData = cachedData['admin_customers'] && cachedData['admin_customers'].data;
+  if (!customersData || !customersData.customers) return;
+  for (var i = 0; i < customersData.customers.length; i++) {
+    if (customersData.customers[i].stripeCustomerId === custId) {
+      customersData.customers[i].notes = notes;
+      return;
+    }
+  }
 }
 
 // ── CSV Export ──────────────────────────────────────────────
