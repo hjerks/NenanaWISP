@@ -412,9 +412,16 @@ function loadCustomers(container, search) {
     // Store for export
     window._lastCustomers = data.customers;
     if (data.customers && data.customers.length > 0) {
+      var sorted = applySort(data.customers, 'customers');
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Last Payment</th><th></th></tr>';
-      data.customers.forEach(function(c) {
+      html += '<tr>';
+      html += sortableTh('customers', 'Name', 'name', 'text');
+      html += sortableTh('customers', 'Email', 'email', 'text');
+      html += sortableTh('customers', 'Plan', 'plan', 'text');
+      html += sortableTh('customers', 'Status', 'status', 'text');
+      html += sortableTh('customers', 'Last Payment', 'lastPayment', 'date');
+      html += '<th></th></tr>';
+      sorted.forEach(function(c) {
         html += '<tr>';
         html += '<td><strong>' + esc(c.name) + '</strong></td>';
         html += '<td>' + esc(c.email) + '</td>';
@@ -481,11 +488,11 @@ function viewCustomer(custId) {
     'Subscription Status': c.status,
     'Last Payment Date': c.lastPayment,
     'Signup Date': c.signupDate,
-    'Stripe Subscription ID': '',
-    'Monthly Price': '',
-    'Portal Link': '',
-    'Last Event': '',
-    'Notes': ''
+    'Stripe Subscription ID': c.subscriptionId || '',
+    'Monthly Price': c.monthlyPrice || '',
+    'Portal Link': c.portalLink || '',
+    'Last Event': c.lastEvent || '',
+    'Notes': c.notes || ''
   };
 
   // Get related data from cache
@@ -590,8 +597,7 @@ function viewCustomer(custId) {
   html += '<div class="panel"><div class="panel-header"><h2>Notes</h2></div>';
   html += '<div class="panel-body">';
   html += '<textarea id="customer-notes" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:0.88rem;resize:vertical;">' + esc(c['Notes'] || '') + '</textarea>';
-  html += '<button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
-  html += '<span id="notes-status" style="margin-left:8px;font-size:0.82rem;color:#6b7280;"></span>';
+  html += '<button class="btn btn-sm btn-primary" id="save-notes-btn" style="margin-top:8px;" onclick="saveCustomerNotes(\'' + esc(custId) + '\')">Save Notes</button>';
   html += '</div></div>';
 
   content.innerHTML = html;
@@ -609,9 +615,16 @@ function loadLeads(container) {
     var visibleLeads = (data.leads || []).filter(function(l) { return l['Lead Status'] !== 'Deleted'; });
     var html = '<div class="panel"><div class="panel-header"><h2>Leads (' + visibleLeads.length + ')</h2></div>';
     if (visibleLeads.length > 0) {
+      var sortedLeads = applySort(visibleLeads, 'leads');
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Date</th><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th></th></tr>';
-      visibleLeads.forEach(function(l) {
+      html += '<tr>';
+      html += sortableTh('leads', 'Date', 'Timestamp', 'date');
+      html += sortableTh('leads', 'Name', 'Full Name', 'text');
+      html += sortableTh('leads', 'Email', 'Email', 'text');
+      html += sortableTh('leads', 'Plan', 'Plan', 'text');
+      html += sortableTh('leads', 'Status', 'Lead Status', 'text');
+      html += '<th></th></tr>';
+      sortedLeads.forEach(function(l) {
         html += '<tr>';
         html += '<td>' + formatDate(l['Timestamp']) + '</td>';
         html += '<td>' + esc(l['Full Name']) + '</td>';
@@ -648,9 +661,17 @@ function loadInstalls(container) {
     }
     var html = '<div class="panel"><div class="panel-header"><h2>Installations</h2></div>';
     if (data.installs && data.installs.length > 0) {
+      var sortedInstalls = applySort(data.installs, 'installs');
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Customer</th><th>Address</th><th>Plan</th><th>Scheduled</th><th>Technician</th><th>Status</th><th></th></tr>';
-      data.installs.forEach(function(inst) {
+      html += '<tr>';
+      html += sortableTh('installs', 'Customer', 'Customer Name', 'text');
+      html += sortableTh('installs', 'Address', 'Service Address', 'text');
+      html += sortableTh('installs', 'Plan', 'Plan', 'text');
+      html += sortableTh('installs', 'Scheduled', 'Scheduled Date', 'date');
+      html += sortableTh('installs', 'Technician', 'Technician', 'text');
+      html += sortableTh('installs', 'Status', 'Status', 'text');
+      html += '<th></th></tr>';
+      sortedInstalls.forEach(function(inst) {
         html += '<tr>';
         html += '<td><strong>' + esc(inst['Customer Name']) + '</strong><br><small style="color:#6b7280;">' + esc(inst['Email']) + '</small></td>';
         html += '<td>' + esc(inst['Service Address']) + '</td>';
@@ -702,9 +723,18 @@ function loadEquipment(container) {
     }
     var html = '<div class="panel"><div class="panel-header"><h2>Equipment Inventory</h2><button class="btn btn-sm btn-success" onclick="addEquipment()">+ Add Equipment</button></div>';
     if (data.equipment && data.equipment.length > 0) {
+      var sortedEquipment = applySort(data.equipment, 'equipment');
       html += '<div class="panel-body no-pad"><table class="data-table">';
-      html += '<tr><th>Type</th><th>Make/Model</th><th>Serial</th><th>MAC</th><th>IP</th><th>Assigned To</th><th>Status</th><th></th></tr>';
-      data.equipment.forEach(function(eq) {
+      html += '<tr>';
+      html += sortableTh('equipment', 'Type', 'Device Type', 'text');
+      html += sortableTh('equipment', 'Make/Model', 'Make/Model', 'text');
+      html += sortableTh('equipment', 'Serial', 'Serial Number', 'text');
+      html += sortableTh('equipment', 'MAC', 'MAC Address', 'text');
+      html += sortableTh('equipment', 'IP', 'IP Address', 'text');
+      html += sortableTh('equipment', 'Assigned To', 'Assigned To', 'text');
+      html += sortableTh('equipment', 'Status', 'Status', 'text');
+      html += '<th></th></tr>';
+      sortedEquipment.forEach(function(eq) {
         html += '<tr>';
         html += '<td>' + esc(eq['Device Type']) + '</td>';
         html += '<td>' + esc(eq['Make/Model']) + '</td>';
@@ -830,6 +860,87 @@ function createTicket(prefillName, prefillEmail) {
   });
 }
 
+// ── Table Sorting ──────────────────────────────────────────
+
+var sortState = {
+  customers: { key: null, dir: 'asc', type: 'text' },
+  leads: { key: null, dir: 'asc', type: 'text' },
+  installs: { key: null, dir: 'asc', type: 'text' },
+  equipment: { key: null, dir: 'asc', type: 'text' }
+};
+
+/**
+ * Render a sortable <th>. The view name maps to sortState; the key is the
+ * field on each row used for comparison; type is text/date/number.
+ */
+function sortableTh(view, label, key, type) {
+  var s = sortState[view];
+  var isActive = s.key === key;
+  var indicator = isActive ? (s.dir === 'asc' ? '&#9650;' : '&#9660;') : '&#9651;';
+  var cls = 'sortable' + (isActive ? ' sort-active' : '');
+  return '<th class="' + cls + '" onclick="setSort(\'' + view + '\', \'' + esc(key) + '\', \'' + (type || 'text') + '\')">' +
+    esc(label) + ' <span class="sort-indicator">' + indicator + '</span></th>';
+}
+
+function setSort(view, key, type) {
+  var s = sortState[view];
+  if (s.key === key) {
+    s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    s.key = key;
+    s.dir = 'asc';
+    s.type = type || 'text';
+  }
+  // Re-render the current view, preserving search if applicable
+  if (view === 'customers') {
+    var inp = document.getElementById('customer-search');
+    var search = inp ? inp.value.trim() : '';
+    loadCustomers(document.getElementById('content-area'), search);
+  } else {
+    loadView(view);
+  }
+}
+
+/**
+ * Sort an array of row objects by the configured sort state.
+ */
+function applySort(rows, view) {
+  var s = sortState[view];
+  if (!s || !s.key) return rows;
+  var key = s.key;
+  var type = s.type;
+  var dir = s.dir === 'asc' ? 1 : -1;
+  var sorted = rows.slice();
+  sorted.sort(function(a, b) {
+    var av = a[key];
+    var bv = b[key];
+    // Empty/null values always sort to the bottom
+    var aEmpty = av === null || av === undefined || av === '';
+    var bEmpty = bv === null || bv === undefined || bv === '';
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    if (type === 'date') {
+      var ad = new Date(av).getTime();
+      var bd = new Date(bv).getTime();
+      if (isNaN(ad) && isNaN(bd)) return 0;
+      if (isNaN(ad)) return 1;
+      if (isNaN(bd)) return -1;
+      return (ad - bd) * dir;
+    }
+    if (type === 'number') {
+      return (parseFloat(av) - parseFloat(bv)) * dir;
+    }
+    // text
+    var as = String(av).toLowerCase();
+    var bs = String(bv).toLowerCase();
+    if (as < bs) return -1 * dir;
+    if (as > bs) return 1 * dir;
+    return 0;
+  });
+  return sorted;
+}
+
 // ── Helpers ────────────────────────────────────────────────
 
 function esc(str) {
@@ -876,6 +987,97 @@ function formatDateInput(val) {
     if (isNaN(d.getTime())) return '';
     return d.toISOString().split('T')[0];
   } catch (e) { return ''; }
+}
+
+// ── Toast Notifications ────────────────────────────────────
+
+function toast(type, message, duration) {
+  var container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  var el = document.createElement('div');
+  el.className = 'toast toast-' + (type || 'info');
+  el.textContent = message;
+  container.appendChild(el);
+  // Trigger CSS transition
+  setTimeout(function() { el.classList.add('toast-show'); }, 10);
+  // Auto-dismiss
+  setTimeout(function() {
+    el.classList.remove('toast-show');
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 250);
+  }, duration || 3500);
+}
+
+// ── Confirm Modal (replaces native confirm) ────────────────
+
+/**
+ * Show a confirmation modal. Replaces native confirm()/alert().
+ * opts: { title, message, confirmText, cancelText, destructive, onConfirm }
+ * onConfirm receives a `done(errMsg)` callback. Call done() to close on success,
+ * done('error message') to keep the modal open and show an error.
+ */
+function confirmModal(opts) {
+  var confirmText = opts.confirmText || 'Confirm';
+  var cancelText = opts.cancelText || 'Cancel';
+  var btnClass = opts.destructive ? 'btn-danger' : 'btn-primary';
+
+  var html = '<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">';
+  html += '<div class="modal" style="max-width:440px;">';
+  html += '<div class="modal-header"><h3>' + esc(opts.title || 'Confirm') + '</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>';
+  html += '<div class="modal-body"><div id="modal-msg"></div>';
+  html += '<p class="confirm-message">' + esc(opts.message || '') + '</p>';
+  html += '</div>';
+  html += '<div class="modal-footer">';
+  html += '<button class="btn btn-outline" id="confirm-cancel-btn">' + esc(cancelText) + '</button>';
+  html += '<button class="btn ' + btnClass + '" id="confirm-ok-btn">' + esc(confirmText) + '</button>';
+  html += '</div></div></div>';
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  document.getElementById('confirm-cancel-btn').addEventListener('click', closeModal);
+  document.getElementById('confirm-ok-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Working...';
+    if (typeof opts.onConfirm === 'function') {
+      opts.onConfirm(function(errMsg) {
+        if (errMsg) {
+          showModalMessage('error', errMsg);
+          btn.disabled = false;
+          btn.textContent = confirmText;
+        } else {
+          closeModal();
+        }
+      });
+    } else {
+      closeModal();
+    }
+  });
+}
+
+/**
+ * Show a single-button info/error message modal. Replaces native alert().
+ */
+function messageModal(type, title, message) {
+  var html = '<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">';
+  html += '<div class="modal" style="max-width:440px;">';
+  html += '<div class="modal-header"><h3>' + esc(title) + '</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>';
+  html += '<div class="modal-body">';
+  if (type === 'error') {
+    html += '<div class="modal-message error">' + esc(message) + '</div>';
+  } else if (type === 'success') {
+    html += '<div class="modal-message success">' + esc(message) + '</div>';
+  } else {
+    html += '<p class="confirm-message">' + esc(message) + '</p>';
+  }
+  html += '</div>';
+  html += '<div class="modal-footer">';
+  html += '<button class="btn btn-primary" onclick="closeModal()">OK</button>';
+  html += '</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 // ── Modal System ───────────────────────────────────────────
@@ -947,16 +1149,24 @@ function showModalMessage(type, text) {
 
 function saveCustomerNotes(custId) {
   var notes = document.getElementById('customer-notes').value;
-  var status = document.getElementById('notes-status');
-  status.textContent = 'Saving...';
+  var btn = document.getElementById('save-notes-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   apiCall('admin_update_customer_notes', { id: custId, notes: notes }, function(err, data) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Notes'; }
     if (err || !data || !data.success) {
-      status.textContent = 'Failed to save.';
-      status.style.color = '#c0392b';
+      toast('error', 'Failed to save notes');
     } else {
-      status.textContent = 'Saved!';
-      status.style.color = '#27ae60';
-      setTimeout(function() { status.textContent = ''; }, 3000);
+      toast('success', 'Notes saved');
+      // Update cached customer data so reopens reflect the new notes
+      var customersData = cachedData['admin_customers'] && cachedData['admin_customers'].data;
+      if (customersData && customersData.customers) {
+        for (var i = 0; i < customersData.customers.length; i++) {
+          if (customersData.customers[i].stripeCustomerId === custId) {
+            customersData.customers[i].notes = notes;
+            break;
+          }
+        }
+      }
     }
   });
 }
@@ -968,45 +1178,70 @@ function exportCustomers() { if (window._lastCustomers) exportToCSV(window._last
 // ── Suspend / Unsuspend ────────────────────────────────────
 
 function suspendCustomer(custId, name) {
-  if (!confirm('Suspend service for ' + name + '? This will pause their subscription and send them a notification email.')) return;
-  apiCall('admin_suspend_customer', { id: custId }, function(err, data) {
-    if (err || !data || !data.success) {
-      alert('Failed to suspend: ' + (data ? data.message || data.error : err.message));
-      return;
+  confirmModal({
+    title: 'Suspend Service?',
+    message: 'Suspend service for ' + name + '? This will pause their subscription and send them a notification email.',
+    confirmText: 'Suspend',
+    destructive: true,
+    onConfirm: function(done) {
+      apiCall('admin_suspend_customer', { id: custId }, function(err, data) {
+        if (err || !data || !data.success) {
+          done('Failed to suspend: ' + (data ? data.message || data.error : err.message));
+          return;
+        }
+        done();
+        toast('success', name + ' suspended');
+        // Clear cache and reload customer detail
+        delete cachedData['admin_customers'];
+        delete cachedData['admin_dashboard'];
+        viewCustomer(custId);
+      });
     }
-    // Clear cache and reload customer detail
-    delete cachedData['admin_customers'];
-    delete cachedData['admin_dashboard'];
-    viewCustomer(custId);
   });
 }
 
 function unsuspendCustomer(custId, name) {
-  if (!confirm('Restore service for ' + name + '? This will resume their subscription and send them a notification.')) return;
-  apiCall('admin_unsuspend_customer', { id: custId }, function(err, data) {
-    if (err || !data || !data.success) {
-      alert('Failed to restore: ' + (data ? data.message || data.error : err.message));
-      return;
+  confirmModal({
+    title: 'Restore Service?',
+    message: 'Restore service for ' + name + '? This will resume their subscription and send them a notification.',
+    confirmText: 'Restore',
+    onConfirm: function(done) {
+      apiCall('admin_unsuspend_customer', { id: custId }, function(err, data) {
+        if (err || !data || !data.success) {
+          done('Failed to restore: ' + (data ? data.message || data.error : err.message));
+          return;
+        }
+        done();
+        toast('success', name + ' restored');
+        delete cachedData['admin_customers'];
+        delete cachedData['admin_dashboard'];
+        viewCustomer(custId);
+      });
     }
-    delete cachedData['admin_customers'];
-    delete cachedData['admin_dashboard'];
-    viewCustomer(custId);
   });
 }
 
 // ── Delete Customer ────────────────────────────────────────
 
 function deleteCustomer(custId, name) {
-  if (!confirm('Delete ' + name + '? This will cancel their Stripe subscription and remove them from the system. This cannot be undone.')) return;
-  if (!confirm('Are you sure? This is permanent.')) return;
-  apiCall('admin_delete_customer', { id: custId }, function(err, data) {
-    if (err || !data || !data.success) {
-      alert('Failed to delete: ' + (data ? data.message || data.error : err.message));
-      return;
+  confirmModal({
+    title: 'Delete ' + name + '?',
+    message: 'This will cancel their Stripe subscription and remove them from the system. This cannot be undone.',
+    confirmText: 'Delete Permanently',
+    destructive: true,
+    onConfirm: function(done) {
+      apiCall('admin_delete_customer', { id: custId }, function(err, data) {
+        if (err || !data || !data.success) {
+          done('Failed to delete: ' + (data ? data.message || data.error : err.message));
+          return;
+        }
+        done();
+        toast('success', name + ' deleted');
+        delete cachedData['admin_customers'];
+        delete cachedData['admin_dashboard'];
+        loadView('customers');
+      });
     }
-    delete cachedData['admin_customers'];
-    delete cachedData['admin_dashboard'];
-    loadView('customers');
   });
 }
 
@@ -1060,7 +1295,7 @@ function editLead(lead) {
 
 function copyCheckoutLink(url) {
   navigator.clipboard.writeText(url).then(function() {
-    alert('Checkout link copied! Open it on any device for in-person payment.');
+    toast('success', 'Checkout link copied to clipboard');
   }).catch(function() {
     // Fallback for older browsers
     prompt('Copy this checkout link:', url);
@@ -1068,15 +1303,22 @@ function copyCheckoutLink(url) {
 }
 
 function resendCheckout(rowNum) {
-  if (!confirm('Resend the checkout link email to this lead? A new payment link will be generated.')) return;
-  apiCall('admin_resend_checkout', { row: rowNum }, function(err, data) {
-    if (err || !data || !data.success) {
-      alert('Failed to resend: ' + (data ? data.message || data.error : err.message));
-      return;
+  confirmModal({
+    title: 'Resend Checkout Link?',
+    message: 'A new payment link will be generated and emailed to this lead.',
+    confirmText: 'Resend',
+    onConfirm: function(done) {
+      apiCall('admin_resend_checkout', { row: rowNum }, function(err, data) {
+        if (err || !data || !data.success) {
+          done('Failed to resend: ' + (data ? data.message || data.error : err.message));
+          return;
+        }
+        done();
+        toast('success', 'Checkout link sent');
+        delete cachedData['admin_leads'];
+        loadView('leads');
+      });
     }
-    alert('Checkout link sent successfully.');
-    delete cachedData['admin_leads'];
-    loadView('leads');
   });
 }
 

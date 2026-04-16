@@ -308,7 +308,12 @@ function getAdminCustomers_(params) {
         plan: c['Plan'],
         status: c['Subscription Status'],
         lastPayment: c['Last Payment Date'],
-        signupDate: c['Signup Date']
+        signupDate: c['Signup Date'],
+        subscriptionId: c['Stripe Subscription ID'],
+        monthlyPrice: c['Monthly Price'],
+        portalLink: c['Portal Link'],
+        lastEvent: c['Last Event'],
+        notes: c['Notes']
       };
     }),
     total: customers.length
