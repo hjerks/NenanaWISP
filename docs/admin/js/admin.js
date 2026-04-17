@@ -9,6 +9,12 @@
 // ── Configuration ──────────────────────────────────────────
 var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZV3Gljv5z5-RrOpM9eo3jDfQ7L_5E9fJYiDmISXli__tX_NWeW4i3zoGRxC08Ykr_4g/exec';
 
+// Google OAuth 2.0 Client ID (Web application) from Google Cloud Console.
+// This is the public client ID and is safe to commit -- the backend still
+// verifies every ID token's audience against the same value stored in the
+// Apps Script property GOOGLE_OAUTH_CLIENT_ID.
+var GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_OAUTH_CLIENT_ID_HERE';
+
 // ── State ──────────────────────────────────────────────────
 var adminToken = null;
 var adminEmail = null;
@@ -21,7 +27,7 @@ var viewingCustomerId = null;
 // ── Initialization ─────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Check for token in URL hash (from OAuth redirect)
+  // Back-compat: older flow redirected with #token=... in the URL hash.
   var hash = window.location.hash;
   if (hash.indexOf('#token=') === 0) {
     adminToken = hash.substring(7);
@@ -29,7 +35,6 @@ document.addEventListener('DOMContentLoaded', function() {
     window.location.hash = '';
   }
 
-  // Check sessionStorage for existing token
   if (!adminToken) {
     adminToken = sessionStorage.getItem('adminToken');
   }
@@ -37,22 +42,102 @@ document.addEventListener('DOMContentLoaded', function() {
   if (adminToken) {
     showApp();
     prefetchAllData();
+  } else {
+    initGoogleSignIn();
   }
 
-  // Set up navigation
   setupNav();
   setupKeyboardShortcuts();
 });
 
 // ── Authentication ─────────────────────────────────────────
 
-function startAuth() {
-  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
-    showAuthError('Admin portal is not yet configured. Set the Apps Script URL in admin.js');
+/**
+ * Render the Google Identity Services "Sign in with Google" button once
+ * the GSI script has loaded. Called on DOMContentLoaded when the user has
+ * no stored token.
+ */
+function initGoogleSignIn() {
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_OAUTH_CLIENT_ID_HERE') {
+    showAuthError('Admin portal OAuth is not yet configured. Set GOOGLE_CLIENT_ID in admin.js.');
     return;
   }
-  var redirect = encodeURIComponent(window.location.href.split('#')[0]);
-  window.location.href = APPS_SCRIPT_URL + '?action=auth&redirect=' + redirect;
+
+  var tries = 0;
+  function waitForGsi() {
+    if (window.google && google.accounts && google.accounts.id) {
+      try {
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: onGoogleCredential,
+          ux_mode: 'popup',
+          auto_select: false
+        });
+        var btnContainer = document.getElementById('gsi-button');
+        if (btnContainer) {
+          btnContainer.innerHTML = '';
+          google.accounts.id.renderButton(btnContainer, {
+            type: 'standard',
+            theme: 'filled_blue',
+            size: 'large',
+            text: 'signin_with',
+            shape: 'pill'
+          });
+        }
+      } catch (e) {
+        showAuthError('Could not initialize Google Sign-In: ' + e.message);
+      }
+      return;
+    }
+    tries++;
+    if (tries > 50) {
+      showAuthError('Could not load Google Sign-In. Check your internet connection and try reloading.');
+      return;
+    }
+    setTimeout(waitForGsi, 100);
+  }
+  waitForGsi();
+}
+
+/**
+ * Called by Google Identity Services after the user selects an account.
+ * response.credential is a JWT (ID token). We POST it to Apps Script for
+ * server-side verification, and in return get our own signed admin token.
+ */
+function onGoogleCredential(response) {
+  if (!response || !response.credential) {
+    showAuthError('Sign-in failed: no credential returned.');
+    return;
+  }
+
+  var authBtn = document.getElementById('auth-btn');
+  if (authBtn) authBtn.disabled = true;
+
+  var url = APPS_SCRIPT_URL + '?action=google_auth&id_token=' + encodeURIComponent(response.credential);
+  fetch(url, { method: 'GET', redirect: 'follow' })
+    .then(function(res) { return res.text(); })
+    .then(function(text) {
+      var data;
+      try { data = JSON.parse(text); } catch (e) {
+        showAuthError('Unexpected response from server. Try again in a moment.');
+        return;
+      }
+      if (data.error) {
+        showAuthError(data.message || data.error);
+        return;
+      }
+      if (!data.token) {
+        showAuthError('Server did not return a session token.');
+        return;
+      }
+      adminToken = data.token;
+      sessionStorage.setItem('adminToken', adminToken);
+      showApp();
+      prefetchAllData();
+    })
+    .catch(function(err) {
+      showAuthError('Sign-in request failed: ' + err.message);
+    });
 }
 
 function logout() {
@@ -62,6 +147,14 @@ function logout() {
   sessionStorage.removeItem('adminToken');
   document.getElementById('auth-screen').style.display = '';
   document.getElementById('admin-app').style.display = 'none';
+  // Ask GSI to forget the previous sign-in so the button prompts for
+  // account selection again rather than auto-signing back in.
+  try {
+    if (window.google && google.accounts && google.accounts.id) {
+      google.accounts.id.disableAutoSelect();
+    }
+  } catch (e) {}
+  initGoogleSignIn();
 }
 
 function showApp() {

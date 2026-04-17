@@ -41,6 +41,86 @@ function handleAdminAuth_(e) {
   // Generate signed token
   var token = generateAdminToken_(user);
 
+  return handleAdminAuthRedirect_(token, e);
+}
+
+/**
+ * Verify a Google ID token (JWT) from Google Identity Services on the
+ * client, then issue our own signed admin token if the email is in
+ * ADMIN_EMAILS. This is the replacement for handleAdminAuth_ now that
+ * Session.getActiveUser().getEmail() does not return consumer Gmail
+ * addresses across accounts.
+ *
+ * Expected params:
+ *   id_token -- the JWT credential returned by google.accounts.id
+ */
+function handleGoogleAuth_(e) {
+  var idToken = (e.parameter || {}).id_token || '';
+  if (!idToken) {
+    return jsonResponse_({ error: 'missing_id_token' });
+  }
+
+  // Verify the token via Google's tokeninfo endpoint. This also decodes
+  // the email and audience claims for us -- no local JWT parsing needed.
+  var tokenInfo;
+  try {
+    var resp = UrlFetchApp.fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+      { muteHttpExceptions: true }
+    );
+    var code = resp.getResponseCode();
+    tokenInfo = JSON.parse(resp.getContentText());
+    if (code < 200 || code >= 300 || tokenInfo.error) {
+      return jsonResponse_({ error: 'invalid_token', message: tokenInfo.error_description || tokenInfo.error || 'Could not verify token' });
+    }
+  } catch (err) {
+    Logger.log('Google auth verify error: ' + err.message);
+    return jsonResponse_({ error: 'verify_failed', message: err.message });
+  }
+
+  // Confirm the token was issued for our OAuth client. This is the check
+  // that stops someone from replaying an ID token they got for a different
+  // app against our backend.
+  var expectedClientId = prop('GOOGLE_OAUTH_CLIENT_ID');
+  if (tokenInfo.aud !== expectedClientId) {
+    return jsonResponse_({ error: 'wrong_audience', message: 'Token was not issued for this application.' });
+  }
+
+  // Require a verified email -- otherwise someone with an unverified
+  // alias could impersonate a legitimate admin.
+  if (tokenInfo.email_verified !== 'true' && tokenInfo.email_verified !== true) {
+    return jsonResponse_({ error: 'email_not_verified' });
+  }
+
+  var email = String(tokenInfo.email || '').toLowerCase();
+  if (!email) {
+    return jsonResponse_({ error: 'no_email' });
+  }
+
+  var adminEmails = propOr('ADMIN_EMAILS', '').split(',').map(function(x) { return x.trim().toLowerCase(); });
+  if (adminEmails.indexOf(email) === -1) {
+    return jsonResponse_({
+      error: 'not_authorized',
+      message: 'Your Google account (' + email + ') is not authorized to access the admin portal.'
+    });
+  }
+
+  var token = generateAdminToken_(email);
+  return jsonResponse_({ token: token, email: email, expires_in: TOKEN_EXPIRY_HOURS * 3600 });
+}
+
+function jsonResponse_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Legacy redirect helper -- only reachable via the old ?action=auth flow.
+ * Kept so existing bookmarks don't break while admins migrate to GSI.
+ */
+function handleAdminAuthRedirect_(token, e) {
+  var redirectUrl = e.parameter.redirect || '';
+
   // Redirect back to admin page with token.
   // Apps Script HtmlService runs inside a sandboxed iframe, so a plain
   // window.location.href only navigates the iframe -- the user appears
@@ -65,7 +145,7 @@ function handleAdminAuth_(e) {
 
   // If no redirect URL, return the token as JSON
   return ContentService.createTextOutput(
-    JSON.stringify({ token: token, email: user, expires_in: TOKEN_EXPIRY_HOURS * 3600 })
+    JSON.stringify({ token: token, expires_in: TOKEN_EXPIRY_HOURS * 3600 })
   ).setMimeType(ContentService.MimeType.JSON);
 }
 

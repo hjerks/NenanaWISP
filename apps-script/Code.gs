@@ -53,9 +53,16 @@ function doGet(e) {
     return handleAdminRequest_(e);
   }
 
-  // Auth endpoint for admin login
+  // Auth endpoint for admin login (legacy Session-based — kept for back-compat)
   if (action === 'auth') {
     return handleAdminAuth_(e);
+  }
+
+  // Google Identity Services (GSI) auth: client posts an ID token, we verify
+  // it and issue our signed admin token. This works across consumer Gmail
+  // accounts, unlike Session.getActiveUser().
+  if (action === 'google_auth') {
+    return handleGoogleAuth_(e);
   }
 
   // Default: simple status response

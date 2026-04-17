@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Portal - NNA Community Broadband</title>
   <link rel="stylesheet" href="css/admin.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -14,7 +15,7 @@
       <h1>NNA Community Broadband</h1>
       <p>Admin Portal</p>
       <p style="font-size: 0.85rem;">Sign in with your authorized Google account to access the management dashboard.</p>
-      <button class="btn btn-primary" id="auth-btn" onclick="startAuth()">Sign In with Google</button>
+      <div id="gsi-button" style="display:flex;justify-content:center;margin:16px 0 0;"></div>
       <p id="auth-error" style="color: #c0392b; margin-top: 16px; display: none;"></p>
     </div>
   </div>
