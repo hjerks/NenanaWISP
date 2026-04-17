@@ -252,3 +252,36 @@ function addInvoiceItem_(customerId, amountCents, description) {
   };
   return stripeRequest_('/v1/invoiceitems', 'post', payload);
 }
+
+// ── Terminal Reader Test ───────────────────────────────────
+
+/**
+ * One-shot test: push a $1.00 charge to the S700 reader.
+ * Run this manually from the Apps Script editor (Run menu > testChargeReader).
+ * Watch the reader — it should display the amount and prompt for card.
+ * Use Stripe test card 4242 4242 4242 4242 via the simulator, or the test cards
+ * that shipped with the S700 in sandbox mode.
+ */
+function testChargeReader() {
+  var READER_ID = 'tmr_Gd36hQaqdqfrop';
+
+  // 1. Create a PaymentIntent for card_present
+  var intent = stripeRequest_('/v1/payment_intents', 'post', {
+    amount: '100', // $1.00 in cents
+    currency: 'usd',
+    payment_method_types: ['card_present'],
+    capture_method: 'automatic',
+    description: 'Terminal test charge'
+  });
+  Logger.log('Created PaymentIntent: ' + intent.id);
+
+  // 2. Push it to the reader
+  var result = stripeRequest_(
+    '/v1/terminal/readers/' + READER_ID + '/process_payment_intent',
+    'post',
+    { payment_intent: intent.id }
+  );
+  Logger.log('Reader action: ' + JSON.stringify(result.action));
+  Logger.log('Check the S700 — it should be prompting for card now.');
+  return result;
+}
