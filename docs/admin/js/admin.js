@@ -13,7 +13,7 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZV3Gljv5z5-RrOp
 // This is the public client ID and is safe to commit -- the backend still
 // verifies every ID token's audience against the same value stored in the
 // Apps Script property GOOGLE_OAUTH_CLIENT_ID.
-var GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_OAUTH_CLIENT_ID_HERE';
+var GOOGLE_CLIENT_ID = '701479231557-u6v0bad9cj6ccsuo55d3o2l18f8q1fip.apps.googleusercontent.com';
 
 // ── State ──────────────────────────────────────────────────
 var adminToken = null;
