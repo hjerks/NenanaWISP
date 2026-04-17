@@ -2061,7 +2061,8 @@ function pushReaderCharge(opts) {
   apiCall('admin_reader_charge', {
     amount: String(opts.amount),
     description: opts.description,
-    customer_id: opts.customerId || ''
+    customer_id: opts.customerId || '',
+    require_confirm: 'true'
   }, function(err, data) {
     if (err || !data || !data.success) {
       var msg = err ? err.message : (data && (data.message || data.error)) || 'Failed to send to reader.';
@@ -2075,72 +2076,158 @@ function pushReaderCharge(opts) {
     }
 
     var paymentIntentId = data.paymentIntentId;
-    renderReaderModal({
-      state: 'waiting',
-      label: opts.label,
-      amount: opts.amount,
-      description: opts.description,
-      paymentIntentId: paymentIntentId,
-      onCancel: function() { cancelReaderCharge(paymentIntentId); }
-    });
 
-    // Poll PaymentIntent status every 2s, for up to 3 minutes.
-    var pollCount = 0;
-    var maxPolls = 90; // 90 * 2s = 3 min
-    function poll() {
-      pollCount++;
-      apiCall('admin_reader_payment_status', { payment_intent_id: paymentIntentId }, function(e2, d2) {
-        if (!document.getElementById('reader-modal-overlay')) return; // modal closed
-        if (e2 || !d2) {
-          // Transient error -- keep polling
-          if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 2000);
-          return;
-        }
-        if (d2.status === 'succeeded') {
-          renderReaderModal({
-            state: 'success',
-            label: opts.label,
-            amount: opts.amount,
-            description: opts.description
-          });
-          toast('success', 'Payment of $' + opts.amount.toFixed(2) + ' captured');
-          if (typeof opts.onSuccess === 'function') opts.onSuccess();
-          return;
-        }
-        if (d2.status === 'canceled') {
-          renderReaderModal({
-            state: 'error',
-            label: opts.label,
-            amount: opts.amount,
-            message: 'Payment was canceled.'
-          });
-          return;
-        }
-        if (d2.status === 'requires_payment_method' && d2.lastError) {
-          // Card declined or similar -- the reader may allow re-tap, but we
-          // surface the error so the operator knows and can try again.
-          renderReaderModal({
-            state: 'error',
-            label: opts.label,
-            amount: opts.amount,
-            message: d2.lastError
-          });
-          return;
-        }
-        if (pollCount >= maxPolls) {
-          renderReaderModal({
-            state: 'error',
-            label: opts.label,
-            amount: opts.amount,
-            message: 'Timed out waiting for payment. Check the reader and the Stripe dashboard.'
-          });
-          return;
-        }
-        _readerPollTimeout = setTimeout(poll, 2000);
+    if (data.awaitingConfirm) {
+      renderReaderModal({
+        state: 'waiting_confirm',
+        label: opts.label,
+        amount: opts.amount,
+        description: opts.description,
+        onCancel: function() { cancelReaderCharge(paymentIntentId); }
       });
+      pollReaderAction(paymentIntentId, opts);
+    } else {
+      // Fallback: backend couldn't run collect_inputs, payment already
+      // processing. Jump straight to card-waiting state.
+      renderReaderModal({
+        state: 'waiting',
+        label: opts.label,
+        amount: opts.amount,
+        description: opts.description,
+        paymentIntentId: paymentIntentId,
+        onCancel: function() { cancelReaderCharge(paymentIntentId); }
+      });
+      pollPaymentIntent(paymentIntentId, opts);
     }
-    _readerPollTimeout = setTimeout(poll, 2000);
   });
+}
+
+/**
+ * Phase 1 poll: customer is viewing Confirm / Cancel on the reader. Watch
+ * the reader's action.collect_inputs.selection value. When they tap
+ * Confirm we kick off process_payment_intent and switch to phase 2.
+ */
+function pollReaderAction(paymentIntentId, opts) {
+  var pollCount = 0;
+  var maxPolls = 90; // 3 min to decide
+  function poll() {
+    pollCount++;
+    apiCall('admin_reader_action_status', null, function(err, data) {
+      if (!document.getElementById('reader-modal-overlay')) return;
+      if (err || !data) {
+        if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 2000);
+        return;
+      }
+
+      // Customer tapped a button
+      if (data.selection === 'confirm') {
+        renderReaderModal({
+          state: 'waiting',
+          label: opts.label,
+          amount: opts.amount,
+          description: opts.description,
+          paymentIntentId: paymentIntentId,
+          onCancel: function() { cancelReaderCharge(paymentIntentId); }
+        });
+        apiCall('admin_reader_start_payment', { payment_intent_id: paymentIntentId }, function(e2, d2) {
+          if (e2 || !d2 || !d2.success) {
+            renderReaderModal({
+              state: 'error',
+              label: opts.label,
+              amount: opts.amount,
+              message: (d2 && (d2.message || d2.error)) || (e2 && e2.message) || 'Could not start card collection.'
+            });
+            return;
+          }
+          pollPaymentIntent(paymentIntentId, opts);
+        });
+        return;
+      }
+      if (data.selection === 'cancel') {
+        cancelReaderCharge(paymentIntentId);
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          amount: opts.amount,
+          message: 'Customer canceled the charge.'
+        });
+        return;
+      }
+
+      // Still waiting. Give up after 3 min so we don't leak a stuck action.
+      if (pollCount >= maxPolls) {
+        cancelReaderCharge(paymentIntentId);
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          amount: opts.amount,
+          message: 'Customer did not respond in time.'
+        });
+        return;
+      }
+      _readerPollTimeout = setTimeout(poll, 2000);
+    });
+  }
+  _readerPollTimeout = setTimeout(poll, 2000);
+}
+
+/**
+ * Phase 2 poll: card has been requested on the reader, watch the
+ * PaymentIntent for terminal state.
+ */
+function pollPaymentIntent(paymentIntentId, opts) {
+  var pollCount = 0;
+  var maxPolls = 90; // 90 * 2s = 3 min
+  function poll() {
+    pollCount++;
+    apiCall('admin_reader_payment_status', { payment_intent_id: paymentIntentId }, function(e2, d2) {
+      if (!document.getElementById('reader-modal-overlay')) return;
+      if (e2 || !d2) {
+        if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 2000);
+        return;
+      }
+      if (d2.status === 'succeeded') {
+        renderReaderModal({
+          state: 'success',
+          label: opts.label,
+          amount: opts.amount,
+          description: opts.description
+        });
+        toast('success', 'Payment of $' + opts.amount.toFixed(2) + ' captured');
+        if (typeof opts.onSuccess === 'function') opts.onSuccess();
+        return;
+      }
+      if (d2.status === 'canceled') {
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          amount: opts.amount,
+          message: 'Payment was canceled.'
+        });
+        return;
+      }
+      if (d2.status === 'requires_payment_method' && d2.lastError) {
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          amount: opts.amount,
+          message: d2.lastError
+        });
+        return;
+      }
+      if (pollCount >= maxPolls) {
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          amount: opts.amount,
+          message: 'Timed out waiting for payment. Check the reader and the Stripe dashboard.'
+        });
+        return;
+      }
+      _readerPollTimeout = setTimeout(poll, 2000);
+    });
+  }
+  _readerPollTimeout = setTimeout(poll, 2000);
 }
 
 function cancelReaderCharge(paymentIntentId) {
@@ -2175,6 +2262,15 @@ function renderReaderModal(opts) {
       '<p style="font-weight:600;margin:0;">Sending ' + esc(amountFmt) + ' to reader...</p>' +
       '</div>';
     footer = '';
+  } else if (state === 'waiting_confirm') {
+    body = '<div style="text-align:center;padding:16px 0;">' +
+      '<div class="loading-spinner" style="margin:0 auto 14px;"></div>' +
+      '<p style="font-weight:600;font-size:1.15rem;margin:0 0 6px;">' + esc(amountFmt) + '</p>' +
+      '<p style="margin:0 0 6px;color:#6b7280;font-size:0.88rem;">' + esc(opts.description || '') + '</p>' +
+      '<p style="margin:14px 0 0;font-size:0.95rem;">Waiting for customer to confirm on reader...</p>' +
+      '<p style="margin:4px 0 0;font-size:0.78rem;color:#9ca3af;">Customer taps Confirm or Cancel on the S700.</p>' +
+      '</div>';
+    footer = '<button class="btn btn-outline" id="reader-modal-cancel">Abort</button>';
   } else if (state === 'waiting') {
     body = '<div style="text-align:center;padding:16px 0;">' +
       '<div class="loading-spinner" style="margin:0 auto 14px;"></div>' +
@@ -2219,7 +2315,7 @@ function renderReaderModal(opts) {
 
   document.body.insertAdjacentHTML('beforeend', html);
 
-  if (state === 'waiting') {
+  if (state === 'waiting' || state === 'waiting_confirm') {
     var cancelBtn = document.getElementById('reader-modal-cancel');
     if (cancelBtn) cancelBtn.addEventListener('click', function() {
       if (typeof opts.onCancel === 'function') opts.onCancel();

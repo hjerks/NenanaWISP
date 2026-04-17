@@ -290,9 +290,52 @@ function chargeOnReader_(opts) {
 
   var intent = stripeRequest_('/v1/payment_intents', 'post', intentPayload);
 
-  // Push a cart to the reader's screen so the customer sees what they're
-  // paying for, not just the amount. Non-fatal if it fails -- the payment
-  // itself still works; the reader just falls back to amount-only display.
+  if (opts.requireConfirm) {
+    // Customer-confirm flow: show a Confirm / Cancel prompt on the reader
+    // with the description + amount. The actual process_payment_intent is
+    // fired later (via startPaymentOnReader_) once the frontend polls and
+    // sees the customer hit Confirm.
+    var dollars = (amount / 100).toFixed(2);
+    var inputsPayload = {
+      'inputs[0][type]': 'selection',
+      'inputs[0][required]': 'true',
+      'inputs[0][custom_text][title]': 'Confirm Payment',
+      'inputs[0][custom_text][description]': '$' + dollars + '\n' + (opts.description || 'Charge'),
+      'inputs[0][selection][choices][0][style]': 'primary',
+      'inputs[0][selection][choices][0][value]': 'confirm',
+      'inputs[0][selection][choices][1][style]': 'secondary',
+      'inputs[0][selection][choices][1][value]': 'cancel'
+    };
+    try {
+      stripeRequest_(
+        '/v1/terminal/readers/' + readerId + '/collect_inputs',
+        'post',
+        inputsPayload
+      );
+    } catch (inputErr) {
+      // If collect_inputs is not supported on the account, fall back to the
+      // simple flow so we don't strand a PaymentIntent with no reader action.
+      Logger.log('collect_inputs failed -- falling back to direct charge: ' + inputErr.message);
+      var fallback = stripeRequest_(
+        '/v1/terminal/readers/' + readerId + '/process_payment_intent',
+        'post',
+        { payment_intent: intent.id }
+      );
+      return {
+        paymentIntentId: intent.id,
+        readerAction: fallback.action || null,
+        awaitingConfirm: false
+      };
+    }
+    return {
+      paymentIntentId: intent.id,
+      awaitingConfirm: true
+    };
+  }
+
+  // Simple flow: show a cart display for a brief moment (mostly metadata at
+  // this point since process_payment_intent takes over the screen), then
+  // start collecting the card.
   try {
     stripeRequest_(
       '/v1/terminal/readers/' + readerId + '/set_reader_display',
@@ -319,8 +362,23 @@ function chargeOnReader_(opts) {
 
   return {
     paymentIntentId: intent.id,
-    readerAction: result.action || null
+    readerAction: result.action || null,
+    awaitingConfirm: false
   };
+}
+
+/**
+ * Fire process_payment_intent on a previously-created PaymentIntent. Used
+ * by the confirm-then-pay flow after the customer hits the Confirm button
+ * via collect_inputs.
+ */
+function startPaymentOnReader_(paymentIntentId) {
+  var readerId = prop('TERMINAL_READER_ID');
+  return stripeRequest_(
+    '/v1/terminal/readers/' + readerId + '/process_payment_intent',
+    'post',
+    { payment_intent: paymentIntentId }
+  );
 }
 
 /**

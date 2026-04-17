@@ -310,6 +310,12 @@ function handleAdminRequest_(e) {
     case 'admin_reader_payment_status':
       result = adminReaderPaymentStatus_(e.parameter);
       break;
+    case 'admin_reader_action_status':
+      result = adminReaderActionStatus_();
+      break;
+    case 'admin_reader_start_payment':
+      result = adminReaderStartPayment_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -1338,20 +1344,72 @@ function adminReaderCharge_(params) {
   var metadata = { source: 'admin_portal_reader' };
   if (customerId) metadata.admin_customer_id = customerId;
 
+  var requireConfirm = String(params.require_confirm || 'false').toLowerCase() === 'true';
+
   try {
     var result = chargeOnReader_({
       amountCents: amountCents,
       description: description,
       customerId: customerId || null,
-      metadata: metadata
+      metadata: metadata,
+      requireConfirm: requireConfirm
     });
     return {
       success: true,
       paymentIntentId: result.paymentIntentId,
-      readerAction: result.readerAction
+      awaitingConfirm: !!result.awaitingConfirm,
+      readerAction: result.readerAction || null
     };
   } catch (e) {
     Logger.log('adminReaderCharge error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+/**
+ * Return the reader's current action status. Used by the frontend while
+ * polling for the customer's Confirm/Cancel tap during the confirm-first
+ * charge flow.
+ */
+function adminReaderActionStatus_() {
+  try {
+    var reader = getReaderInfo_();
+    var action = reader.action || null;
+    // Pull the selection value (if any) out of collect_inputs so the
+    // frontend doesn't have to know the exact Stripe payload shape.
+    var selection = null;
+    if (action && action.type === 'collect_inputs' && action.collect_inputs) {
+      var inputs = action.collect_inputs.inputs || [];
+      if (inputs[0] && inputs[0].selection && inputs[0].selection.value) {
+        selection = inputs[0].selection.value;
+      }
+    }
+    return {
+      status: action ? action.status : null,     // in_progress | succeeded | failed | canceled | null
+      type: action ? action.type : null,         // collect_inputs | process_payment_intent | null
+      selection: selection,
+      failureCode: action && action.failure_code ? action.failure_code : null,
+      failureMessage: action && action.failure_message ? action.failure_message : null
+    };
+  } catch (e) {
+    Logger.log('adminReaderActionStatus error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+/**
+ * Kick off the actual card collection on a PaymentIntent that was created
+ * earlier by the confirm flow. Called once the frontend sees the customer
+ * hit Confirm.
+ */
+function adminReaderStartPayment_(params) {
+  var pi = String(params.payment_intent_id || '').trim();
+  if (!pi) return { error: 'missing_payment_intent_id' };
+  try {
+    var result = startPaymentOnReader_(pi);
+    return { success: true, readerAction: result.action || null };
+  } catch (e) {
+    Logger.log('adminReaderStartPayment error: ' + e.message);
     return { error: 'stripe_error', message: e.message };
   }
 }
