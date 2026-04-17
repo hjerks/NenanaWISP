@@ -75,6 +75,7 @@ function showApp() {
   } catch (e) {
     document.getElementById('user-email').textContent = '';
   }
+  startReaderStatusPolling();
 }
 
 function showAuthError(msg) {
@@ -311,6 +312,10 @@ function loadView(view) {
     case 'support':
       title.textContent = 'Support Tickets';
       loadSupport(content);
+      break;
+    case 'quickcharge':
+      title.textContent = 'Quick Charge';
+      loadQuickCharge(content);
       break;
     default:
       content.innerHTML = '<div class="empty-state"><p>Unknown view</p></div>';
@@ -621,6 +626,7 @@ function viewCustomer(custId) {
   html += '<div class="action-bar">';
   html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
   html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + nameEscJs + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
+  html += '<button class="btn btn-sm btn-success" onclick="chargeCustomerWithReader(\'' + custIdEsc + '\',\'' + nameEscJs + '\')">Charge with Reader</button>';
   html += '<button class="btn btn-sm btn-outline" onclick="changePlan(\'' + custIdEsc + '\',\'' + nameEscJs + '\',\'' + planEscJs + '\')">Change Plan</button>';
   html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + custIdEsc + '" target="_blank">Open in Stripe</a>';
   var subStatus = c['Subscription Status'];
@@ -1798,4 +1804,340 @@ function exportToCSV(data, filename) {
   link.download = filename || 'export.csv';
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+// ── Terminal Reader ────────────────────────────────────────
+
+var readerStatusInterval = null;
+var readerLastStatus = null;
+
+function startReaderStatusPolling() {
+  if (readerStatusInterval) return;
+  pollReaderStatus();
+  // Re-check every 60s so the pill reflects reality if the device sleeps.
+  readerStatusInterval = setInterval(pollReaderStatus, 60000);
+}
+
+function pollReaderStatus() {
+  apiCall('admin_reader_status', null, function(err, data) {
+    var pill = document.getElementById('reader-status-pill');
+    if (!pill) return;
+    if (err || !data || data.configured === false) {
+      // Don't show the pill at all if the reader isn't configured -- no point
+      // surfacing a permanent red dot when the Script Property is just unset.
+      pill.style.display = 'none';
+      readerLastStatus = null;
+      return;
+    }
+    readerLastStatus = data.status;
+    pill.style.display = '';
+    if (data.status === 'online') {
+      pill.textContent = 'Reader: Online';
+      pill.style.background = '#d1fae5';
+      pill.style.color = '#065f46';
+    } else {
+      pill.textContent = 'Reader: Offline';
+      pill.style.background = '#fee2e2';
+      pill.style.color = '#991b1b';
+    }
+  });
+}
+
+/**
+ * "Charge with Reader" from a customer row. Opens a small form, then hands
+ * off to the shared push-and-wait flow.
+ */
+function chargeCustomerWithReader(custId, name) {
+  if (readerLastStatus && readerLastStatus !== 'online') {
+    return messageModal('error', 'Reader Offline',
+      'The Terminal reader is currently offline. Power it on and wait for it to reconnect, then try again.');
+  }
+  showModal('Charge ' + name + ' with Reader', [
+    { label: 'Amount (USD)', key: 'amount', type: 'number', value: '' },
+    { label: 'Description', key: 'description', type: 'text', value: 'In-person payment' },
+    { label: 'Note', type: 'static', value: 'The charge will appear on the S700. The customer taps/inserts their card to complete. The payment is linked to this customer in Stripe automatically.' }
+  ], function(values) {
+    var amount = parseFloat(values.amount);
+    if (!amount || amount <= 0) return showModalMessage('error', 'Enter a valid amount greater than 0.');
+    if (amount < 0.50) return showModalMessage('error', 'Minimum charge is $0.50.');
+    var description = String(values.description || '').trim();
+    if (!description) return showModalMessage('error', 'Description is required.');
+    pushReaderCharge({
+      amount: amount,
+      description: description,
+      customerId: custId,
+      label: name,
+      onSuccess: function() {
+        // Bust caches so the customer's payment history reflects the new charge.
+        delete cachedData['admin_customers'];
+        delete cachedData['admin_dashboard'];
+        if (paymentHistoryCache && paymentHistoryCache[custId]) delete paymentHistoryCache[custId];
+        // If we're still on this customer's detail view, reload the payment
+        // history section so the new charge shows up.
+        if (viewingCustomerId === custId) {
+          apiCall('admin_customers', null, function() { loadPaymentHistory(custId); });
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Quick Charge view -- ad-hoc in-person charge not tied to a WISP customer.
+ */
+function loadQuickCharge(container) {
+  var statusPill = '';
+  if (readerLastStatus === 'online') {
+    statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.8rem;font-weight:600;">Reader Online</span>';
+  } else if (readerLastStatus === 'offline') {
+    statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.8rem;font-weight:600;">Reader Offline</span>';
+  } else {
+    statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#f3f4f6;color:#6b7280;font-size:0.8rem;font-weight:600;">Checking reader...</span>';
+  }
+
+  var html = '';
+  html += '<div class="panel"><div class="panel-header"><h2>Quick Charge</h2>' + statusPill + '</div>';
+  html += '<div class="panel-body">';
+  html += '<p style="color:#6b7280;font-size:0.88rem;margin-top:0;">Use this to take an in-person payment for anything that is <strong>not</strong> tied to a WISP subscriber (merchandise, ad-hoc fees, other NNA sales, etc). The payment will land in Stripe without being linked to a customer record.</p>';
+  html += '<div class="form-group"><label>Amount (USD)</label>';
+  html += '<input type="number" id="qc-amount" min="0.50" step="0.01" placeholder="25.00" style="width:100%;">';
+  html += '</div>';
+  html += '<div class="form-group"><label>Description</label>';
+  html += '<input type="text" id="qc-description" placeholder="What is this charge for?" style="width:100%;">';
+  html += '</div>';
+  html += '<button class="btn btn-success" onclick="submitQuickCharge()" style="margin-top:8px;">Send to Reader</button>';
+  html += '</div></div>';
+
+  container.innerHTML = html;
+  // Focus the amount field for fast keying.
+  setTimeout(function() {
+    var a = document.getElementById('qc-amount');
+    if (a) a.focus();
+  }, 50);
+}
+
+function submitQuickCharge() {
+  var amountEl = document.getElementById('qc-amount');
+  var descEl = document.getElementById('qc-description');
+  if (!amountEl || !descEl) return;
+
+  var amount = parseFloat(amountEl.value);
+  var description = String(descEl.value || '').trim();
+
+  if (!amount || amount <= 0) return messageModal('error', 'Invalid Amount', 'Enter an amount greater than 0.');
+  if (amount < 0.50) return messageModal('error', 'Invalid Amount', 'Minimum charge is $0.50.');
+  if (!description) return messageModal('error', 'Missing Description', 'Description is required so the charge is identifiable in Stripe.');
+  if (readerLastStatus && readerLastStatus !== 'online') {
+    return messageModal('error', 'Reader Offline', 'The Terminal reader is currently offline. Power it on and wait for it to reconnect, then try again.');
+  }
+
+  pushReaderCharge({
+    amount: amount,
+    description: description,
+    customerId: null,
+    label: 'Quick Charge',
+    onSuccess: function() {
+      // Clear the form for the next sale.
+      if (amountEl) amountEl.value = '';
+      if (descEl) descEl.value = '';
+      if (amountEl) amountEl.focus();
+    }
+  });
+}
+
+/**
+ * Shared push-and-wait modal. Pushes the charge to the reader, then polls
+ * the PaymentIntent every 2 seconds until it reaches a terminal state
+ * (succeeded, canceled, or the poll times out).
+ *
+ * opts: { amount (dollars), description, customerId (or null), label, onSuccess }
+ */
+var _readerPollHandle = null;
+var _readerPollTimeout = null;
+
+function pushReaderCharge(opts) {
+  // Render the modal immediately in "sending" state so the operator gets
+  // feedback while the first API call (create intent + push to reader) runs.
+  renderReaderModal({
+    state: 'sending',
+    label: opts.label,
+    amount: opts.amount,
+    description: opts.description
+  });
+
+  apiCall('admin_reader_charge', {
+    amount: String(opts.amount),
+    description: opts.description,
+    customer_id: opts.customerId || ''
+  }, function(err, data) {
+    if (err || !data || !data.success) {
+      var msg = err ? err.message : (data && (data.message || data.error)) || 'Failed to send to reader.';
+      renderReaderModal({
+        state: 'error',
+        label: opts.label,
+        amount: opts.amount,
+        message: msg
+      });
+      return;
+    }
+
+    var paymentIntentId = data.paymentIntentId;
+    renderReaderModal({
+      state: 'waiting',
+      label: opts.label,
+      amount: opts.amount,
+      description: opts.description,
+      paymentIntentId: paymentIntentId,
+      onCancel: function() { cancelReaderCharge(paymentIntentId); }
+    });
+
+    // Poll PaymentIntent status every 2s, for up to 3 minutes.
+    var pollCount = 0;
+    var maxPolls = 90; // 90 * 2s = 3 min
+    function poll() {
+      pollCount++;
+      apiCall('admin_reader_payment_status', { payment_intent_id: paymentIntentId }, function(e2, d2) {
+        if (!document.getElementById('reader-modal-overlay')) return; // modal closed
+        if (e2 || !d2) {
+          // Transient error -- keep polling
+          if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 2000);
+          return;
+        }
+        if (d2.status === 'succeeded') {
+          renderReaderModal({
+            state: 'success',
+            label: opts.label,
+            amount: opts.amount,
+            description: opts.description
+          });
+          toast('success', 'Payment of $' + opts.amount.toFixed(2) + ' captured');
+          if (typeof opts.onSuccess === 'function') opts.onSuccess();
+          return;
+        }
+        if (d2.status === 'canceled') {
+          renderReaderModal({
+            state: 'error',
+            label: opts.label,
+            amount: opts.amount,
+            message: 'Payment was canceled.'
+          });
+          return;
+        }
+        if (d2.status === 'requires_payment_method' && d2.lastError) {
+          // Card declined or similar -- the reader may allow re-tap, but we
+          // surface the error so the operator knows and can try again.
+          renderReaderModal({
+            state: 'error',
+            label: opts.label,
+            amount: opts.amount,
+            message: d2.lastError
+          });
+          return;
+        }
+        if (pollCount >= maxPolls) {
+          renderReaderModal({
+            state: 'error',
+            label: opts.label,
+            amount: opts.amount,
+            message: 'Timed out waiting for payment. Check the reader and the Stripe dashboard.'
+          });
+          return;
+        }
+        _readerPollTimeout = setTimeout(poll, 2000);
+      });
+    }
+    _readerPollTimeout = setTimeout(poll, 2000);
+  });
+}
+
+function cancelReaderCharge(paymentIntentId) {
+  // Best-effort cancel on the reader. Don't wait for the poll -- update the
+  // modal immediately so the operator gets snappy feedback.
+  if (_readerPollTimeout) { clearTimeout(_readerPollTimeout); _readerPollTimeout = null; }
+  renderReaderModal({ state: 'canceling' });
+  apiCall('admin_reader_cancel', null, function(err, data) {
+    closeReaderModal();
+    if (err) {
+      toast('error', 'Cancel sent but got an error: ' + err.message);
+    } else {
+      toast('success', 'Reader charge canceled');
+    }
+  });
+}
+
+function renderReaderModal(opts) {
+  // Clean up any existing modal so we can re-render for state changes.
+  var existing = document.getElementById('reader-modal-overlay');
+  if (existing) existing.remove();
+
+  var state = opts.state;
+  var amountFmt = opts.amount != null ? '$' + Number(opts.amount).toFixed(2) : '';
+
+  var body = '';
+  var footer = '';
+
+  if (state === 'sending') {
+    body = '<div style="text-align:center;padding:16px 0;">' +
+      '<div class="loading-spinner" style="margin:0 auto 14px;"></div>' +
+      '<p style="font-weight:600;margin:0;">Sending ' + esc(amountFmt) + ' to reader...</p>' +
+      '</div>';
+    footer = '';
+  } else if (state === 'waiting') {
+    body = '<div style="text-align:center;padding:16px 0;">' +
+      '<div class="loading-spinner" style="margin:0 auto 14px;"></div>' +
+      '<p style="font-weight:600;font-size:1.15rem;margin:0 0 6px;">' + esc(amountFmt) + '</p>' +
+      '<p style="margin:0 0 6px;color:#6b7280;font-size:0.88rem;">' + esc(opts.description || '') + '</p>' +
+      '<p style="margin:14px 0 0;font-size:0.95rem;">Waiting for card on reader...</p>' +
+      '<p style="margin:4px 0 0;font-size:0.78rem;color:#9ca3af;">Customer taps, inserts, or swipes on the S700.</p>' +
+      '</div>';
+    footer = '<button class="btn btn-outline" id="reader-modal-cancel">Cancel Charge</button>';
+  } else if (state === 'canceling') {
+    body = '<div style="text-align:center;padding:16px 0;">' +
+      '<div class="loading-spinner" style="margin:0 auto 14px;"></div>' +
+      '<p style="margin:0;">Canceling on reader...</p></div>';
+    footer = '';
+  } else if (state === 'success') {
+    body = '<div style="text-align:center;padding:16px 0;">' +
+      '<div style="font-size:48px;line-height:1;color:#059669;margin-bottom:10px;">&#10004;</div>' +
+      '<p style="font-weight:600;font-size:1.15rem;margin:0 0 6px;">Paid ' + esc(amountFmt) + '</p>' +
+      '<p style="margin:0;color:#6b7280;font-size:0.88rem;">' + esc(opts.description || '') + '</p>' +
+      '</div>';
+    footer = '<button class="btn btn-primary" id="reader-modal-done">Done</button>';
+  } else if (state === 'error') {
+    body = '<div style="padding:10px 0;">' +
+      '<div class="modal-message error">' + esc(opts.message || 'Something went wrong.') + '</div>' +
+      '</div>';
+    footer = '<button class="btn btn-outline" id="reader-modal-done">Close</button>';
+  }
+
+  var title = state === 'success' ? 'Payment Complete'
+    : state === 'error' ? 'Charge Error'
+    : state === 'canceling' ? 'Canceling'
+    : 'Charge ' + (opts.label || '');
+
+  var html = '<div class="modal-overlay" id="reader-modal-overlay">' +
+    '<div class="modal" style="max-width:440px;">' +
+    '<div class="modal-header"><h3>' + esc(title) + '</h3>' +
+    (state === 'waiting' || state === 'sending' ? '' : '<button class="modal-close" onclick="closeReaderModal()">&times;</button>') +
+    '</div>' +
+    '<div class="modal-body">' + body + '</div>' +
+    (footer ? '<div class="modal-footer">' + footer + '</div>' : '') +
+    '</div></div>';
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  if (state === 'waiting') {
+    var cancelBtn = document.getElementById('reader-modal-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', function() {
+      if (typeof opts.onCancel === 'function') opts.onCancel();
+    });
+  }
+  var doneBtn = document.getElementById('reader-modal-done');
+  if (doneBtn) doneBtn.addEventListener('click', closeReaderModal);
+}
+
+function closeReaderModal() {
+  if (_readerPollTimeout) { clearTimeout(_readerPollTimeout); _readerPollTimeout = null; }
+  var overlay = document.getElementById('reader-modal-overlay');
+  if (overlay) overlay.remove();
 }

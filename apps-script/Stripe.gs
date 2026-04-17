@@ -253,35 +253,99 @@ function addInvoiceItem_(customerId, amountCents, description) {
   return stripeRequest_('/v1/invoiceitems', 'post', payload);
 }
 
-// ── Terminal Reader Test ───────────────────────────────────
+// ── Terminal Reader ────────────────────────────────────────
 
 /**
- * One-shot test: push a $1.00 charge to the S700 reader.
- * Run this manually from the Apps Script editor (Run menu > testChargeReader).
- * Watch the reader — it should display the amount and prompt for card.
- * Use Stripe test card 4242 4242 4242 4242 via the simulator, or the test cards
- * that shipped with the S700 in sandbox mode.
+ * Push a payment to the Terminal reader.
+ * Creates a card_present PaymentIntent and tells the reader to collect it.
+ * @param {Object} opts
+ * @param {number} opts.amountCents - Amount in cents (>= 50)
+ * @param {string} opts.description - Description shown on the payment
+ * @param {string} [opts.customerId] - Optional Stripe customer ID to link the charge to
+ * @param {Object} [opts.metadata] - Optional metadata keys to attach
+ * @returns {Object} { paymentIntentId, readerAction }
  */
-function testChargeReader() {
-  var READER_ID = 'tmr_Gd36hQaqdqfrop';
+function chargeOnReader_(opts) {
+  var readerId = prop('TERMINAL_READER_ID');
+  var amount = parseInt(opts.amountCents, 10);
+  if (!amount || amount < 50) {
+    throw new Error('Amount must be at least $0.50');
+  }
 
-  // 1. Create a PaymentIntent for card_present
-  var intent = stripeRequest_('/v1/payment_intents', 'post', {
-    amount: '100', // $1.00 in cents
+  var intentPayload = {
+    amount: String(amount),
     currency: 'usd',
     payment_method_types: ['card_present'],
     capture_method: 'automatic',
-    description: 'Terminal test charge'
-  });
-  Logger.log('Created PaymentIntent: ' + intent.id);
+    description: opts.description || 'Terminal charge'
+  };
+  if (opts.customerId) intentPayload.customer = opts.customerId;
+  if (opts.metadata) {
+    for (var k in opts.metadata) {
+      if (opts.metadata.hasOwnProperty(k)) {
+        intentPayload['metadata[' + k + ']'] = opts.metadata[k];
+      }
+    }
+  }
 
-  // 2. Push it to the reader
+  var intent = stripeRequest_('/v1/payment_intents', 'post', intentPayload);
+
   var result = stripeRequest_(
-    '/v1/terminal/readers/' + READER_ID + '/process_payment_intent',
+    '/v1/terminal/readers/' + readerId + '/process_payment_intent',
     'post',
     { payment_intent: intent.id }
   );
-  Logger.log('Reader action: ' + JSON.stringify(result.action));
-  Logger.log('Check the S700 — it should be prompting for card now.');
+
+  return {
+    paymentIntentId: intent.id,
+    readerAction: result.action || null
+  };
+}
+
+/**
+ * Cancel the reader's in-progress action (if any). Used when the operator
+ * hits "Cancel" after pushing a payment.
+ */
+function cancelReaderAction_() {
+  var readerId = prop('TERMINAL_READER_ID');
+  try {
+    return stripeRequest_(
+      '/v1/terminal/readers/' + readerId + '/cancel_action',
+      'post',
+      {}
+    );
+  } catch (e) {
+    Logger.log('cancelReaderAction error (often safe to ignore): ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Get the reader's current status and any in-progress action.
+ */
+function getReaderInfo_() {
+  var readerId = prop('TERMINAL_READER_ID');
+  return stripeGet_('/v1/terminal/readers/' + readerId);
+}
+
+/**
+ * Get the status of a PaymentIntent by ID. Used to poll from the admin UI
+ * while the reader is collecting payment.
+ */
+function getPaymentIntentStatus_(paymentIntentId) {
+  return stripeGet_('/v1/payment_intents/' + paymentIntentId);
+}
+
+/**
+ * One-shot manual test: push $1 to the reader. Run from the Apps Script
+ * editor to sanity-check the TERMINAL_READER_ID script property.
+ */
+function testChargeReader() {
+  var result = chargeOnReader_({
+    amountCents: 100,
+    description: 'Terminal test charge'
+  });
+  Logger.log('PaymentIntent: ' + result.paymentIntentId);
+  Logger.log('Reader action: ' + JSON.stringify(result.readerAction));
   return result;
 }

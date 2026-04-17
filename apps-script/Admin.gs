@@ -218,6 +218,18 @@ function handleAdminRequest_(e) {
     case 'admin_mark_invoice_paid':
       result = markInvoicePaid_(e.parameter);
       break;
+    case 'admin_reader_status':
+      result = adminReaderStatus_();
+      break;
+    case 'admin_reader_charge':
+      result = adminReaderCharge_(e.parameter);
+      break;
+    case 'admin_reader_cancel':
+      result = adminReaderCancel_();
+      break;
+    case 'admin_reader_payment_status':
+      result = adminReaderPaymentStatus_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -1192,6 +1204,109 @@ function markInvoicePaid_(params) {
     return { success: true, status: invoice.status };
   } catch (e) {
     Logger.log('markInvoicePaid error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+// ── Terminal Reader ────────────────────────────────────────
+
+/**
+ * Return reader status (online/offline) and basic info for the UI.
+ */
+function adminReaderStatus_() {
+  try {
+    var reader = getReaderInfo_();
+    return {
+      configured: true,
+      id: reader.id,
+      label: reader.label || '',
+      status: reader.status,               // 'online' | 'offline'
+      serial: reader.serial_number || '',
+      deviceType: reader.device_type || '',
+      action: reader.action || null        // in-progress action if any
+    };
+  } catch (e) {
+    Logger.log('adminReaderStatus error: ' + e.message);
+    // Most common cause is TERMINAL_READER_ID not set yet.
+    return { configured: false, error: 'reader_error', message: e.message };
+  }
+}
+
+/**
+ * Push a charge to the reader. Used by both the per-customer "Charge with
+ * Reader" button and the ad-hoc Quick Charge screen.
+ * Params:
+ *   amount       -- dollars (string or number, e.g. "75.00")
+ *   description  -- required
+ *   customer_id  -- optional; attaches the charge to a Stripe customer
+ */
+function adminReaderCharge_(params) {
+  var dollars = parseFloat(params.amount);
+  if (!dollars || dollars <= 0) {
+    return { error: 'invalid_amount', message: 'Amount must be greater than 0.' };
+  }
+  var description = String(params.description || '').trim();
+  if (!description) {
+    return { error: 'missing_description', message: 'Description is required.' };
+  }
+  var amountCents = Math.round(dollars * 100);
+  if (amountCents < 50) {
+    return { error: 'invalid_amount', message: 'Minimum charge is $0.50.' };
+  }
+
+  var customerId = String(params.customer_id || '').trim();
+  var metadata = { source: 'admin_portal_reader' };
+  if (customerId) metadata.admin_customer_id = customerId;
+
+  try {
+    var result = chargeOnReader_({
+      amountCents: amountCents,
+      description: description,
+      customerId: customerId || null,
+      metadata: metadata
+    });
+    return {
+      success: true,
+      paymentIntentId: result.paymentIntentId,
+      readerAction: result.readerAction
+    };
+  } catch (e) {
+    Logger.log('adminReaderCharge error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+/**
+ * Cancel the reader's in-progress action (operator hit Cancel before the
+ * customer paid).
+ */
+function adminReaderCancel_() {
+  try {
+    cancelReaderAction_();
+    return { success: true };
+  } catch (e) {
+    Logger.log('adminReaderCancel error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+/**
+ * Poll a PaymentIntent's status. Admin UI calls this every couple of seconds
+ * after pushing a charge so it knows when the customer has paid (or failed).
+ */
+function adminReaderPaymentStatus_(params) {
+  var pi = String(params.payment_intent_id || '').trim();
+  if (!pi) return { error: 'missing_payment_intent_id' };
+  try {
+    var intent = getPaymentIntentStatus_(pi);
+    return {
+      id: intent.id,
+      status: intent.status,          // requires_payment_method | requires_confirmation | requires_action | processing | succeeded | canceled
+      amount: (intent.amount || 0) / 100,
+      lastError: intent.last_payment_error ? intent.last_payment_error.message : null
+    };
+  } catch (e) {
+    Logger.log('adminReaderPaymentStatus error: ' + e.message);
     return { error: 'stripe_error', message: e.message };
   }
 }
