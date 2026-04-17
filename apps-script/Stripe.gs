@@ -290,6 +290,27 @@ function chargeOnReader_(opts) {
 
   var intent = stripeRequest_('/v1/payment_intents', 'post', intentPayload);
 
+  // Push a cart to the reader's screen so the customer sees what they're
+  // paying for, not just the amount. Non-fatal if it fails -- the payment
+  // itself still works; the reader just falls back to amount-only display.
+  try {
+    stripeRequest_(
+      '/v1/terminal/readers/' + readerId + '/set_reader_display',
+      'post',
+      {
+        type: 'cart',
+        'cart[currency]': 'usd',
+        'cart[total]': String(amount),
+        'cart[tax]': '0',
+        'cart[line_items][0][description]': opts.description || 'Charge',
+        'cart[line_items][0][amount]': String(amount),
+        'cart[line_items][0][quantity]': '1'
+      }
+    );
+  } catch (displayErr) {
+    Logger.log('set_reader_display failed (non-fatal): ' + displayErr.message);
+  }
+
   var result = stripeRequest_(
     '/v1/terminal/readers/' + readerId + '/process_payment_intent',
     'post',
