@@ -1380,8 +1380,10 @@ function adminReaderActionStatus_() {
     var selection = null;
     if (action && action.type === 'collect_inputs' && action.collect_inputs) {
       var inputs = action.collect_inputs.inputs || [];
-      if (inputs[0] && inputs[0].selection && inputs[0].selection.value) {
-        selection = inputs[0].selection.value;
+      // Stripe returns the customer's chosen choice id as `selection.id`
+      // on the input object; `selection.choices[].id` is the definition.
+      if (inputs[0] && inputs[0].selection && inputs[0].selection.id) {
+        selection = inputs[0].selection.id;
       }
     }
     return {
