@@ -428,3 +428,39 @@ function testChargeReader() {
   Logger.log('Reader action: ' + JSON.stringify(result.readerAction));
   return result;
 }
+
+/**
+ * Diagnostic: call collect_inputs directly and log exactly what Stripe
+ * returns. Run this from the editor when the confirm-button flow is not
+ * showing up on the reader, so we can see the actual error message.
+ */
+function testCollectInputs() {
+  var readerId = prop('TERMINAL_READER_ID');
+  var secret = prop('STRIPE_SECRET_KEY');
+  var url = 'https://api.stripe.com/v1/terminal/readers/' + readerId + '/collect_inputs';
+
+  var payload = {
+    'inputs[0][type]': 'selection',
+    'inputs[0][required]': 'true',
+    'inputs[0][custom_text][title]': 'Confirm Payment',
+    'inputs[0][custom_text][description]': '$1.00\nTest charge',
+    'inputs[0][selection][choices][0][style]': 'primary',
+    'inputs[0][selection][choices][0][value]': 'confirm',
+    'inputs[0][selection][choices][1][style]': 'secondary',
+    'inputs[0][selection][choices][1][value]': 'cancel'
+  };
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: { 'Authorization': 'Bearer ' + secret },
+    contentType: 'application/x-www-form-urlencoded',
+    payload: payload,
+    muteHttpExceptions: true
+  });
+
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  Logger.log('HTTP ' + code);
+  Logger.log(body);
+  return { code: code, body: body };
+}
