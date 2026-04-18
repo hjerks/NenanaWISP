@@ -709,4 +709,148 @@ body {
   .sidebar-toggle {
     display: block;
   }
+
+  /* ── Header: pack tighter, drop the non-essentials ────── */
+  .admin-header {
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .admin-header h1 {
+    font-size: 1rem;
+  }
+  .admin-header .user-info,
+  .admin-header #refresh-status {
+    display: none;
+  }
+  /* Keep the Refresh and Sign Out buttons visible but compact. */
+  .admin-header .btn-sm {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+
+  /* ── Content: use the screen ─────────────────────────── */
+  .admin-content {
+    padding: 14px;
+  }
+  .panel {
+    margin-bottom: 16px;
+    border-radius: 6px;
+  }
+  .panel-header {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .panel-body {
+    padding: 14px;
+  }
+
+  /* ── Tables: horizontal scroll rather than overflow ──── */
+  .panel-body.no-pad {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .data-table {
+    min-width: 560px;
+  }
+  .data-table th,
+  .data-table td {
+    padding: 9px 12px;
+  }
+
+  /* Filter chips: slightly tighter spacing */
+  .filter-chips {
+    padding: 10px 12px;
+  }
+
+  /* ── Buttons: bigger tap targets ─────────────────────── */
+  .btn {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+  }
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* ── Action bar: wraps, each button still tappable ───── */
+  .action-bar {
+    gap: 6px;
+  }
+  .action-bar .btn {
+    flex: 1 1 auto;
+  }
+
+  /* ── Modals: fill more of the screen ─────────────────── */
+  .modal-overlay {
+    padding: 10px;
+  }
+  .modal {
+    max-height: calc(100vh - 20px);
+  }
+  .modal-header,
+  .modal-footer {
+    padding: 12px 14px;
+  }
+  .modal-body {
+    padding: 14px;
+  }
+  .modal-footer {
+    flex-wrap: wrap;
+  }
+  .modal-footer .btn {
+    flex: 1 1 auto;
+  }
+
+  /* iOS zooms the page when focusing an input with font-size < 16px.
+     Bump every form input to 16px on mobile to prevent that. */
+  input,
+  select,
+  textarea,
+  .search-bar input,
+  .modal .form-group input,
+  .modal .form-group select,
+  .modal .form-group textarea {
+    font-size: 16px;
+  }
+
+  /* ── Toasts: full-width strip at the bottom ──────────── */
+  #toast-container {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+  }
+  .toast {
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* ── Stats card values: slightly smaller on phone ────── */
+  .stat-value {
+    font-size: 1.5rem;
+  }
+  .stat-card {
+    padding: 14px 16px;
+  }
+
+  /* ── Auth card: don't feel cramped ───────────────────── */
+  .auth-card {
+    padding: 32px 24px;
+    margin: 16px;
+  }
+}
+
+/* Even narrower phones (portrait iPhone SE, etc.) */
+@media (max-width: 420px) {
+  .admin-content {
+    padding: 10px;
+  }
+  .panel-header h2 {
+    font-size: 0.95rem;
+  }
+  /* The "Sign Out" button label eats header width -- keep it, but shrink. */
+  .admin-header .btn-sm {
+    padding: 5px 8px;
+    font-size: 0.72rem;
+  }
 }

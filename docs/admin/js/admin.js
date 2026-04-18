@@ -1429,9 +1429,9 @@ function formatMoney(val) {
 }
 
 function infoRow(label, value) {
-  return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">' +
-    '<span style="color:#6b7280;font-size:0.85rem;">' + label + '</span>' +
-    '<span style="font-weight:500;">' + (value || '--') + '</span></div>';
+  return '<div class="info-row" style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f1f5f9;">' +
+    '<span style="color:#6b7280;font-size:0.85rem;flex-shrink:0;">' + label + '</span>' +
+    '<span style="font-weight:500;text-align:right;word-break:break-word;">' + (value || '--') + '</span></div>';
 }
 
 function formatDateInput(val) {
