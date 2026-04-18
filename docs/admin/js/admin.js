@@ -2109,13 +2109,14 @@ function pushReaderCharge(opts) {
  */
 function pollReaderAction(paymentIntentId, opts) {
   var pollCount = 0;
-  var maxPolls = 90; // 3 min to decide
+  var maxPolls = 180; // 3 min at 1s interval -- faster polling to shrink the
+                       // gap between Confirm tap and the tap-to-pay screen.
   function poll() {
     pollCount++;
     apiCall('admin_reader_action_status', null, function(err, data) {
       if (!document.getElementById('reader-modal-overlay')) return;
       if (err || !data) {
-        if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 2000);
+        if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 1000);
         return;
       }
 
@@ -2165,10 +2166,10 @@ function pollReaderAction(paymentIntentId, opts) {
         });
         return;
       }
-      _readerPollTimeout = setTimeout(poll, 2000);
+      _readerPollTimeout = setTimeout(poll, 1000);
     });
   }
-  _readerPollTimeout = setTimeout(poll, 2000);
+  _readerPollTimeout = setTimeout(poll, 1000);
 }
 
 /**
