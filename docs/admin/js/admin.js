@@ -1979,6 +1979,12 @@ function chargeCustomerWithReader(custId, name) {
  * Quick Charge view -- ad-hoc in-person charge not tied to a WISP customer.
  */
 function loadQuickCharge(container) {
+  // The initial data prefetch re-renders the current view when cache chunks
+  // arrive. That wipes any text the operator has typed. Quick Charge does
+  // not depend on any prefetched data, so skip the re-render if the form
+  // is already on screen.
+  if (document.getElementById('qc-amount')) return;
+
   var statusPill = '';
   if (readerLastStatus === 'online') {
     statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.8rem;font-weight:600;">Reader Online</span>';
