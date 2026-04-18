@@ -445,9 +445,11 @@ function testCollectInputs() {
     'inputs[0][custom_text][title]': 'Confirm Payment',
     'inputs[0][custom_text][description]': '$1.00\nTest charge',
     'inputs[0][selection][choices][0][style]': 'primary',
-    'inputs[0][selection][choices][0][value]': 'confirm',
+    'inputs[0][selection][choices][0][id]': 'confirm',
+    'inputs[0][selection][choices][0][text]': 'Confirm',
     'inputs[0][selection][choices][1][style]': 'secondary',
-    'inputs[0][selection][choices][1][value]': 'cancel'
+    'inputs[0][selection][choices][1][id]': 'cancel',
+    'inputs[0][selection][choices][1][text]': 'Cancel'
   };
 
   var response = UrlFetchApp.fetch(url, {
