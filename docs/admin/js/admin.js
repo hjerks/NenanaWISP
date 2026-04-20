@@ -2007,7 +2007,7 @@ function loadQuickCharge(container) {
   html += '<label for="qc-amount">Amount</label>';
   html += '<div class="qc-amount-field">';
   html += '<span class="qc-amount-prefix">$</span>';
-  html += '<input type="number" id="qc-amount" min="0.50" step="0.01" inputmode="decimal" placeholder="0.00">';
+  html += '<input type="number" id="qc-amount" min="0.50" step="0.01" inputmode="decimal">';
   html += '</div>';
   html += '</div>';
 
