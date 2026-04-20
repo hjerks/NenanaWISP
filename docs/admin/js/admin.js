@@ -374,10 +374,13 @@ function loadView(view) {
   var content = document.getElementById('content-area');
   var title = document.getElementById('page-title');
 
-  // Show loading only if no cached data exists
+  // Show loading only if no cached data exists. Skip for views that do not
+  // depend on prefetched data (e.g. Quick Charge) so a background prefetch
+  // completion does not wipe a form the operator is mid-typing into.
   var actionMap = { dashboard: 'admin_dashboard', customers: 'admin_customers', leads: 'admin_leads', installs: 'admin_installs', equipment: 'admin_equipment', support: 'admin_support' };
+  var isNonDataView = (view === 'quickcharge');
   var hasCache = cachedData[actionMap[view]];
-  if (!hasCache) {
+  if (!hasCache && !isNonDataView) {
     content.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Loading...</p></div>';
   }
 
