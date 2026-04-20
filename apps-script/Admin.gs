@@ -316,6 +316,12 @@ function handleAdminRequest_(e) {
     case 'admin_reader_start_payment':
       result = adminReaderStartPayment_(e.parameter);
       break;
+    case 'admin_reader_charge_product':
+      result = adminReaderChargeProduct_(e.parameter);
+      break;
+    case 'admin_reader_finalize_product_charge':
+      result = adminReaderFinalizeProductCharge_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -1428,6 +1434,133 @@ function adminReaderCancel_() {
     Logger.log('adminReaderCancel error: ' + e.message);
     return { error: 'stripe_error', message: e.message };
   }
+}
+
+/**
+ * Take a plan/product payment on the Terminal. Creates a finalized Stripe
+ * invoice for the given price, then spins up a card_present PaymentIntent
+ * for its amount and pushes a Confirm / Cancel prompt to the reader.
+ *
+ * On the frontend's side the usual waiting_confirm -> waiting -> success
+ * state machine runs. Once the card captures, the frontend must call
+ * admin_reader_finalize_product_charge so we mark the invoice paid and
+ * update the customer's last payment date.
+ *
+ * Params:
+ *   customer_id -- Stripe customer ID (required)
+ *   price_id    -- Stripe price ID to bill (required)
+ *   plan_label  -- human-readable plan name shown on the reader (optional)
+ */
+function adminReaderChargeProduct_(params) {
+  var customerId = String(params.customer_id || '').trim();
+  var planName = String(params.plan_name || '').trim();
+  if (!customerId) return { error: 'missing_customer_id' };
+  if (!planName) return { error: 'missing_plan_name' };
+
+  var priceId;
+  try {
+    priceId = getPriceIdForPlan_(planName);
+  } catch (e) {
+    return { error: 'invalid_plan', message: e.message };
+  }
+  var planLabel = planName;
+
+  var invoice;
+  try {
+    invoice = createProductInvoice_({ customerId: customerId, priceId: priceId });
+  } catch (e) {
+    Logger.log('createProductInvoice_ error: ' + e.message);
+    return { error: 'stripe_error', message: 'Could not prepare invoice: ' + e.message };
+  }
+
+  var amountCents = parseInt(invoice.amount_due, 10);
+  if (!amountCents || amountCents < 50) {
+    return { error: 'invalid_amount', message: 'Invoice amount is not valid for a Terminal charge.' };
+  }
+
+  var description = planLabel
+    ? (planLabel + ' — Invoice ' + (invoice.number || invoice.id))
+    : ('Invoice ' + (invoice.number || invoice.id));
+
+  try {
+    var result = chargeOnReader_({
+      amountCents: amountCents,
+      description: description,
+      customerId: customerId,
+      requireConfirm: true,
+      metadata: {
+        source: 'admin_portal_reader',
+        product_charge: 'true',
+        invoice_id: invoice.id,
+        plan_label: planLabel || ''
+      }
+    });
+    return {
+      success: true,
+      paymentIntentId: result.paymentIntentId,
+      awaitingConfirm: !!result.awaitingConfirm,
+      readerAction: result.readerAction || null,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.number || '',
+      amount: amountCents / 100
+    };
+  } catch (e) {
+    Logger.log('adminReaderChargeProduct_ error: ' + e.message);
+    // Invoice was created; try to void it so we don't leave a stranded
+    // unpaid invoice on the customer's account.
+    try { stripeRequest_('/v1/invoices/' + invoice.id + '/void', 'post', {}); } catch (vErr) {}
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+/**
+ * Called by the frontend after the Terminal payment captures. Reads the
+ * PaymentIntent's metadata to find the linked invoice, marks the invoice
+ * paid out of band, and updates the customer's Last Payment Date.
+ */
+function adminReaderFinalizeProductCharge_(params) {
+  var pi = String(params.payment_intent_id || '').trim();
+  if (!pi) return { error: 'missing_payment_intent_id' };
+
+  var intent;
+  try {
+    intent = getPaymentIntentStatus_(pi);
+  } catch (e) {
+    return { error: 'stripe_error', message: 'Could not read PaymentIntent: ' + e.message };
+  }
+
+  if (intent.status !== 'succeeded') {
+    return { error: 'not_succeeded', message: 'PaymentIntent is not in succeeded state (got: ' + intent.status + ').' };
+  }
+
+  var metadata = intent.metadata || {};
+  var invoiceId = metadata.invoice_id || '';
+  if (!invoiceId) {
+    return { error: 'missing_invoice_id', message: 'PaymentIntent has no linked invoice.' };
+  }
+
+  try {
+    markInvoicePaidOutOfBand_(invoiceId);
+  } catch (e) {
+    Logger.log('markInvoicePaidOutOfBand_ error: ' + e.message);
+    return { error: 'stripe_error', message: 'Could not mark invoice paid: ' + e.message };
+  }
+
+  // Update the Last Payment Date in the sheet if this customer is in it.
+  try {
+    var customerId = intent.customer || '';
+    if (customerId) {
+      var customerRow = findRow_(TAB_CUSTOMERS, C_.STRIPE_CUST_ID, customerId);
+      if (customerRow) {
+        writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_PAYMENT, new Date());
+        writeCell_(TAB_CUSTOMERS, customerRow, C_.LAST_EVENT, 'reader_plan_charge');
+      }
+    }
+  } catch (e) {
+    Logger.log('Post-charge sheet update failed (non-fatal): ' + e.message);
+  }
+
+  return { success: true, invoiceId: invoiceId };
 }
 
 /**

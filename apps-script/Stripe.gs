@@ -418,6 +418,54 @@ function getPaymentIntentStatus_(paymentIntentId) {
 }
 
 /**
+ * Create a finalized one-off invoice for a specific Stripe product/price
+ * and return the invoice object. The resulting invoice has a single line
+ * item whose amount and description come from the Price on Stripe's side,
+ * so the transaction in the dashboard shows the plan name and price
+ * instead of a generic Terminal charge.
+ *
+ * The invoice is created with collection_method=send_invoice so Stripe
+ * does not auto-attempt to charge any card on file -- we collect via the
+ * Terminal and mark the invoice paid out of band once the tap succeeds.
+ */
+function createProductInvoice_(opts) {
+  var customerId = opts.customerId;
+  var priceId = opts.priceId;
+  if (!customerId) throw new Error('Missing customerId for invoice');
+  if (!priceId) throw new Error('Missing priceId for invoice');
+
+  // 1. Attach a pending invoice item to the customer for this price. Stripe
+  //    pulls the amount and description from the Price automatically.
+  stripeRequest_('/v1/invoiceitems', 'post', {
+    customer: customerId,
+    price: priceId
+  });
+
+  // 2. Create an invoice that pulls in the pending item.
+  var invoice = stripeRequest_('/v1/invoices', 'post', {
+    customer: customerId,
+    collection_method: 'send_invoice',
+    days_until_due: '1',
+    auto_advance: 'false'
+  });
+
+  // 3. Finalize so the invoice is immutable and the amount_due is locked.
+  invoice = stripeRequest_('/v1/invoices/' + invoice.id + '/finalize', 'post', {});
+
+  return invoice;
+}
+
+/**
+ * Mark an invoice paid out of band. Used after a Terminal payment has
+ * captured so the invoice's paid state matches reality in Stripe.
+ */
+function markInvoicePaidOutOfBand_(invoiceId) {
+  return stripeRequest_('/v1/invoices/' + invoiceId + '/pay', 'post', {
+    paid_out_of_band: 'true'
+  });
+}
+
+/**
  * One-shot manual test: push $1 to the reader. Run from the Apps Script
  * editor to sanity-check the TERMINAL_READER_ID script property.
  */

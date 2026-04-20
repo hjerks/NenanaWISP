@@ -722,7 +722,8 @@ function viewCustomer(custId) {
   html += '<div class="action-bar">';
   html += '<button class="btn btn-sm btn-outline" onclick="loadView(\'customers\')">&larr; Back to Customers</button>';
   html += '<button class="btn btn-sm btn-primary" onclick="createTicket(\'' + nameEscJs + '\',\'' + esc(c['Email']).replace(/'/g, "\\'") + '\')">Create Ticket</button>';
-  html += '<button class="btn btn-sm btn-success" onclick="chargeCustomerWithReader(\'' + custIdEsc + '\',\'' + nameEscJs + '\')">Charge with Reader</button>';
+  html += '<button class="btn btn-sm btn-success" onclick="chargePlanWithReader(\'' + custIdEsc + '\',\'' + nameEscJs + '\',\'' + planEscJs + '\')">Charge Plan via Reader</button>';
+  html += '<button class="btn btn-sm btn-outline" onclick="chargeCustomerWithReader(\'' + custIdEsc + '\',\'' + nameEscJs + '\')">Charge Ad-Hoc</button>';
   html += '<button class="btn btn-sm btn-outline" onclick="changePlan(\'' + custIdEsc + '\',\'' + nameEscJs + '\',\'' + planEscJs + '\')">Change Plan</button>';
   html += '<a class="btn btn-sm btn-outline" href="https://dashboard.stripe.com/customers/' + custIdEsc + '" target="_blank">Open in Stripe</a>';
   var subStatus = c['Subscription Status'];
@@ -1975,6 +1976,117 @@ function chargeCustomerWithReader(custId, name) {
         }
       }
     });
+  });
+}
+
+/**
+ * Charge a customer for a service plan via the reader. Unlike ad-hoc
+ * Charge with Reader, this creates a real Stripe invoice for the selected
+ * plan (so the transaction shows up in Stripe tied to the product in the
+ * catalog) and marks the invoice paid once the tap succeeds.
+ */
+function chargePlanWithReader(custId, name, currentPlan) {
+  if (readerLastStatus && readerLastStatus !== 'online') {
+    return messageModal('error', 'Reader Offline',
+      'The Terminal reader is currently offline. Power it on and wait for it to reconnect, then try again.');
+  }
+  showModal('Charge Plan — ' + name, [
+    { label: 'Plan', key: 'plan', type: 'select', value: currentPlan || '', options: PLAN_OPTIONS },
+    { label: 'Note', type: 'static', value: 'Creates a Stripe invoice for the selected plan and charges it via the reader. The charge is recorded as a paid invoice in the customer\'s Payment History, tied to the product in the Stripe catalog.' }
+  ], function(values) {
+    if (!values.plan) return showModalMessage('error', 'Pick a plan.');
+    closeModal();
+    pushReaderProductCharge({
+      customerId: custId,
+      planName: values.plan,
+      label: name
+    });
+  });
+}
+
+/**
+ * Same push-and-poll flow as pushReaderCharge but starts with
+ * admin_reader_charge_product (which creates the invoice on the backend)
+ * and calls admin_reader_finalize_product_charge after the card captures
+ * so the invoice is marked paid.
+ */
+function pushReaderProductCharge(opts) {
+  renderReaderModal({
+    state: 'sending',
+    label: opts.label,
+    description: opts.planName
+  });
+
+  apiCall('admin_reader_charge_product', {
+    customer_id: opts.customerId,
+    plan_name: opts.planName
+  }, function(err, data) {
+    if (err || !data || !data.success) {
+      var msg = err ? err.message : (data && (data.message || data.error)) || 'Failed to start charge.';
+      renderReaderModal({
+        state: 'error',
+        label: opts.label,
+        message: msg
+      });
+      return;
+    }
+
+    var paymentIntentId = data.paymentIntentId;
+    var amount = data.amount;
+    var description = opts.planName + (data.invoiceNumber ? ' — Invoice ' + data.invoiceNumber : '');
+
+    var successHandler = function() {
+      // Mark the Stripe invoice paid out of band now that the card has
+      // captured. Silent failure is OK -- the Terminal charge already
+      // succeeded; we'd just log it in Apps Script and the operator can
+      // mark the invoice paid manually from Stripe if needed.
+      apiCall('admin_reader_finalize_product_charge', {
+        payment_intent_id: paymentIntentId
+      }, function(fErr, fData) {
+        if (fErr || !fData || !fData.success) {
+          // Don't override the success toast -- just warn.
+          toast('warning', 'Payment captured but invoice finalization failed. Check Stripe.');
+        }
+      });
+      // Bust caches + refresh the payment history shown on this customer.
+      delete cachedData['admin_customers'];
+      delete cachedData['admin_dashboard'];
+      if (paymentHistoryCache && paymentHistoryCache[opts.customerId]) delete paymentHistoryCache[opts.customerId];
+      if (viewingCustomerId === opts.customerId) {
+        apiCall('admin_customers', null, function() { loadPaymentHistory(opts.customerId); });
+      }
+    };
+
+    if (data.awaitingConfirm) {
+      renderReaderModal({
+        state: 'waiting_confirm',
+        label: opts.label,
+        amount: amount,
+        description: description,
+        onCancel: function() { cancelReaderCharge(paymentIntentId); }
+      });
+      pollReaderAction(paymentIntentId, {
+        label: opts.label,
+        amount: amount,
+        description: description,
+        onSuccess: successHandler
+      });
+    } else {
+      renderReaderModal({
+        state: 'waiting',
+        label: opts.label,
+        amount: amount,
+        description: description,
+        paymentIntentId: paymentIntentId,
+        onCancel: function() { cancelReaderCharge(paymentIntentId); }
+      });
+      pollPaymentIntent(paymentIntentId, {
+        label: opts.label,
+        amount: amount,
+        description: description,
+        onSuccess: successHandler
+      });
+    }
   });
 }
 
