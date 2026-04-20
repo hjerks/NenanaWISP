@@ -434,11 +434,38 @@ function createProductInvoice_(opts) {
   if (!customerId) throw new Error('Missing customerId for invoice');
   if (!priceId) throw new Error('Missing priceId for invoice');
 
-  // 1. Attach a pending invoice item to the customer for this price. Stripe
-  //    pulls the amount and description from the Price automatically.
+  // Fetch the Price so we can copy its amount, currency, and product name
+  // into the invoice item directly. We do this manually rather than passing
+  // `price=price_xxx` to /v1/invoiceitems because that parameter was
+  // deprecated in favor of a more structured shape, and letting Stripe
+  // hydrate the item automatically has been inconsistent across API
+  // versions.
+  var price = stripeGet_('/v1/prices/' + priceId);
+  var amountCents = parseInt(price.unit_amount, 10) || 0;
+  var currency = price.currency || 'usd';
+
+  // Grab the product name so the line item description says
+  // "Residential 100/20 Mbps" instead of a bare price ID.
+  var lineDescription = 'Plan payment';
+  if (price.product) {
+    try {
+      var product = stripeGet_('/v1/products/' + price.product);
+      if (product && product.name) lineDescription = product.name;
+    } catch (e) {
+      Logger.log('Could not fetch product for line description: ' + e.message);
+    }
+  }
+
+  // 1. Attach a pending invoice item to the customer with the amount pulled
+  //    from the Price. Link the Price and Product via metadata so the
+  //    invoice is still traceable back to the catalog entry.
   stripeRequest_('/v1/invoiceitems', 'post', {
     customer: customerId,
-    price: priceId
+    amount: String(amountCents),
+    currency: currency,
+    description: lineDescription,
+    'metadata[stripe_price_id]': priceId,
+    'metadata[stripe_product_id]': price.product || ''
   });
 
   // 2. Create an invoice that pulls in the pending item.
@@ -446,7 +473,9 @@ function createProductInvoice_(opts) {
     customer: customerId,
     collection_method: 'send_invoice',
     days_until_due: '1',
-    auto_advance: 'false'
+    auto_advance: 'false',
+    'metadata[stripe_price_id]': priceId,
+    'metadata[stripe_product_id]': price.product || ''
   });
 
   // 3. Finalize so the invoice is immutable and the amount_due is locked.
