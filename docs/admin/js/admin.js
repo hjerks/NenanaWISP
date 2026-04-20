@@ -1985,27 +1985,40 @@ function loadQuickCharge(container) {
   // is already on screen.
   if (document.getElementById('qc-amount')) return;
 
-  var statusPill = '';
+  var statusClass, statusLabel;
   if (readerLastStatus === 'online') {
-    statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.8rem;font-weight:600;">Reader Online</span>';
+    statusClass = 'qc-status-online'; statusLabel = 'Reader Online';
   } else if (readerLastStatus === 'offline') {
-    statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.8rem;font-weight:600;">Reader Offline</span>';
+    statusClass = 'qc-status-offline'; statusLabel = 'Reader Offline';
   } else {
-    statusPill = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#f3f4f6;color:#6b7280;font-size:0.8rem;font-weight:600;">Checking reader...</span>';
+    statusClass = 'qc-status-unknown'; statusLabel = 'Checking reader...';
   }
 
   var html = '';
-  html += '<div class="panel"><div class="panel-header"><h2>Quick Charge</h2>' + statusPill + '</div>';
+  html += '<div class="quick-charge-wrap">';
+  html += '<div class="panel quick-charge-panel">';
+  html += '<div class="panel-header"><h2>Quick Charge</h2>';
+  html += '<span class="qc-status ' + statusClass + '">' + statusLabel + '</span>';
+  html += '</div>';
   html += '<div class="panel-body">';
-  html += '<p style="color:#6b7280;font-size:0.88rem;margin-top:0;">Use this to take an in-person payment for anything that is <strong>not</strong> tied to a WISP subscriber (merchandise, ad-hoc fees, other NNA sales, etc). The payment will land in Stripe without being linked to a customer record.</p>';
-  html += '<div class="form-group"><label>Amount (USD)</label>';
-  html += '<input type="number" id="qc-amount" min="0.50" step="0.01" placeholder="25.00" style="width:100%;">';
+  html += '<p class="quick-charge-intro">Take an in-person payment for anything <strong>not</strong> tied to a WISP subscriber &mdash; merchandise, ad-hoc fees, other NNA sales, etc. The payment lands in Stripe without being linked to a customer record.</p>';
+
+  html += '<div class="form-group">';
+  html += '<label for="qc-amount">Amount</label>';
+  html += '<div class="qc-amount-field">';
+  html += '<span class="qc-amount-prefix">$</span>';
+  html += '<input type="number" id="qc-amount" min="0.50" step="0.01" inputmode="decimal" placeholder="0.00">';
   html += '</div>';
-  html += '<div class="form-group"><label>Description</label>';
-  html += '<input type="text" id="qc-description" placeholder="What is this charge for?" style="width:100%;">';
   html += '</div>';
-  html += '<button class="btn btn-success" onclick="submitQuickCharge()" style="margin-top:8px;">Send to Reader</button>';
-  html += '</div></div>';
+
+  html += '<div class="form-group">';
+  html += '<label for="qc-description">Description</label>';
+  html += '<input type="text" id="qc-description" placeholder="What is this charge for?">';
+  html += '<p class="qc-field-hint">Shown to the customer on the reader when they confirm the charge.</p>';
+  html += '</div>';
+
+  html += '<button class="btn btn-success qc-submit" onclick="submitQuickCharge()">Send to Reader</button>';
+  html += '</div></div></div>';
 
   container.innerHTML = html;
   // Focus the amount field for fast keying.

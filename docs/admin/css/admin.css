@@ -683,6 +683,117 @@ body {
   margin-bottom: 4px;
 }
 
+/* ── Quick Charge ─────────────────────────────────────── */
+
+.quick-charge-wrap {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.quick-charge-panel .panel-header {
+  align-items: center;
+}
+
+.quick-charge-intro {
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin: 0 0 22px;
+}
+
+.quick-charge-panel .form-group {
+  margin-bottom: 18px;
+}
+
+.quick-charge-panel .form-group label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+  margin-bottom: 6px;
+}
+
+.quick-charge-panel .form-group input[type="text"],
+.quick-charge-panel .form-group input[type="number"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-white);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.quick-charge-panel .form-group input:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+  box-shadow: 0 0 0 3px rgba(46,134,193,0.14);
+}
+
+.qc-amount-field {
+  position: relative;
+}
+
+.qc-amount-field .qc-amount-prefix {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-light);
+  font-weight: 600;
+  font-size: 1.35rem;
+  pointer-events: none;
+}
+
+.qc-amount-field input[type="number"] {
+  padding-left: 34px;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Strip the browser default up/down spinner on the amount field --
+   we want a clean look, and users will type or tap-to-edit. */
+.qc-amount-field input[type="number"]::-webkit-inner-spin-button,
+.qc-amount-field input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.qc-amount-field input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.qc-field-hint {
+  margin: 6px 2px 0;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  line-height: 1.4;
+}
+
+.qc-submit {
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Reader status pill on the Quick Charge header */
+.qc-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.qc-status-online { background: #d1fae5; color: #065f46; }
+.qc-status-offline { background: #fee2e2; color: #991b1b; }
+.qc-status-unknown { background: #f3f4f6; color: #6b7280; }
+
 /* ── Mobile Sidebar ────────────────────────────────────── */
 
 .sidebar-toggle {
@@ -810,8 +921,14 @@ body {
   .search-bar input,
   .modal .form-group input,
   .modal .form-group select,
-  .modal .form-group textarea {
+  .modal .form-group textarea,
+  .quick-charge-panel .form-group input[type="text"] {
     font-size: 16px;
+  }
+  /* Keep the Quick Charge amount field prominent on mobile (already > 16px
+     at 1.35rem, but re-declare to beat any blanket override above). */
+  .qc-amount-field input[type="number"] {
+    font-size: 1.3rem;
   }
 
   /* ── Toasts: full-width strip at the bottom ──────────── */
