@@ -734,26 +734,53 @@ body {
   box-shadow: 0 0 0 3px rgba(46,134,193,0.14);
 }
 
+/* Amount field uses an input-group layout: a $ slot on the left and
+   the input on the right, sharing one border so there is no overlap. */
 .qc-amount-field {
-  position: relative;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-white);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.qc-amount-field:focus-within {
+  border-color: var(--color-primary-light);
+  box-shadow: 0 0 0 3px rgba(46,134,193,0.14);
 }
 
 .qc-amount-field .qc-amount-prefix {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  background: #f8fafc;
   color: var(--color-text-light);
   font-weight: 600;
-  font-size: 1.35rem;
-  pointer-events: none;
+  font-size: 1.2rem;
+  border-right: 1px solid var(--color-border);
+  user-select: none;
 }
 
 .qc-amount-field input[type="number"] {
-  padding-left: 38px;
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 10px 14px;
   font-size: 1.35rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  background: transparent;
+}
+
+.qc-amount-field input[type="number"]:focus {
+  outline: none;
+  /* The container handles the focus ring via :focus-within. */
+  box-shadow: none !important;
 }
 
 /* Strip the browser default up/down spinner on the amount field --
