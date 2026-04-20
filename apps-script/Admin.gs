@@ -1475,7 +1475,16 @@ function adminReaderChargeProduct_(params) {
 
   var amountCents = parseInt(invoice.amount_due, 10);
   if (!amountCents || amountCents < 50) {
-    return { error: 'invalid_amount', message: 'Invoice amount is not valid for a Terminal charge.' };
+    Logger.log('Invoice came back with unusable amount. Invoice: ' + JSON.stringify(invoice));
+    return {
+      error: 'invalid_amount',
+      message: 'Invoice amount is not valid for a Terminal charge. ' +
+        'amount_due=' + invoice.amount_due +
+        ', total=' + invoice.total +
+        ', subtotal=' + invoice.subtotal +
+        ', status=' + invoice.status +
+        ', invoice=' + invoice.id
+    };
   }
 
   var description = planLabel
