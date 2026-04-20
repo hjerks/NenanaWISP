@@ -456,24 +456,26 @@ function createProductInvoice_(opts) {
     }
   }
 
-  // 1. Attach a pending invoice item to the customer with the amount pulled
-  //    from the Price. Link the Price and Product via metadata so the
-  //    invoice is still traceable back to the catalog entry.
-  stripeRequest_('/v1/invoiceitems', 'post', {
-    customer: customerId,
-    amount: String(amountCents),
-    currency: currency,
-    description: lineDescription,
-    'metadata[stripe_price_id]': priceId,
-    'metadata[stripe_product_id]': price.product || ''
-  });
-
-  // 2. Create an invoice that pulls in the pending item.
+  // 1. Create an empty draft invoice first so we can attach the line item
+  //    directly to it. Doing it in this order avoids the "pending invoice
+  //    items behavior" ambiguity for customers who also have an active
+  //    subscription (which would otherwise leave our line item dangling).
   var invoice = stripeRequest_('/v1/invoices', 'post', {
     customer: customerId,
     collection_method: 'send_invoice',
     days_until_due: '1',
     auto_advance: 'false',
+    'metadata[stripe_price_id]': priceId,
+    'metadata[stripe_product_id]': price.product || ''
+  });
+
+  // 2. Add the line item directly to this invoice by passing its ID.
+  stripeRequest_('/v1/invoiceitems', 'post', {
+    customer: customerId,
+    invoice: invoice.id,
+    amount: String(amountCents),
+    currency: currency,
+    description: lineDescription,
     'metadata[stripe_price_id]': priceId,
     'metadata[stripe_product_id]': price.product || ''
   });
