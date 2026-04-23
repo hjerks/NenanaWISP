@@ -10,6 +10,7 @@ var TAB_INSTALLS   = 'Installs';
 var TAB_EQUIPMENT  = 'Equipment';
 var TAB_SUPPORT    = 'Support';
 var TAB_WEBHOOK_LOG = 'Webhook_Log';
+var TAB_BROADCAST_LOG = 'Broadcast_Log';
 var TAB_DASHBOARD  = 'Dashboard';
 
 // ── Column Indexes (1-based) for Leads tab ─────────────────
@@ -100,6 +101,11 @@ var WEBHOOK_LOG_HEADERS = [
   'Subscription ID', 'Row Key', 'Status', 'Payload Preview'
 ];
 
+var BROADCAST_LOG_HEADERS = [
+  'Timestamp', 'Sender Email', 'Subject', 'Body',
+  'Recipient Count', 'Sent Count', 'Failed Count', 'Recipients', 'Failed Recipients'
+];
+
 // ── Sheet Access ───────────────────────────────────────────
 
 /**
@@ -165,6 +171,7 @@ function initializeAllSheets() {
   ensureHeaders_(TAB_EQUIPMENT, EQUIPMENT_HEADERS);
   ensureHeaders_(TAB_SUPPORT, SUPPORT_HEADERS);
   ensureHeaders_(TAB_WEBHOOK_LOG, WEBHOOK_LOG_HEADERS);
+  ensureHeaders_(TAB_BROADCAST_LOG, BROADCAST_LOG_HEADERS);
 
   var dashSheet = getSheet_(TAB_DASHBOARD);
   var firstCell = dashSheet.getRange('A1').getValue();

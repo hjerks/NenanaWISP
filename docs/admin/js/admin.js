@@ -417,6 +417,10 @@ function loadView(view) {
       title.textContent = 'Coverage Check';
       loadCoverage(content);
       break;
+    case 'broadcast':
+      title.textContent = 'Broadcast Email';
+      loadBroadcast(content);
+      break;
     default:
       content.innerHTML = '<div class="empty-state"><p>Unknown view</p></div>';
   }
@@ -2838,4 +2842,151 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
 function formatMeters(m) {
   if (m >= 1000) return (m / 1000).toFixed(2) + ' km (' + (m / 1609).toFixed(2) + ' mi)';
   return m.toFixed(0) + ' m (' + (m * 3.281).toFixed(0) + ' ft)';
+}
+
+// ── Broadcast Email View ───────────────────────────────────
+
+var _broadcastPreview = null;  // { count, quotaRemaining, sampleNames }
+
+function loadBroadcast(container) {
+  container.innerHTML =
+    '<div class="panel">' +
+    '  <div class="panel-header"><h2>Send Broadcast Email</h2></div>' +
+    '  <div class="panel-body">' +
+    '    <div id="bc-preview" class="bc-preview-box loading">Loading recipient count&hellip;</div>' +
+    '    <div class="form-group">' +
+    '      <label for="bc-subject">Subject</label>' +
+    '      <input type="text" id="bc-subject" placeholder="e.g. Network outage tonight 8-10 PM" maxlength="120">' +
+    '    </div>' +
+    '    <div class="form-group">' +
+    '      <label for="bc-body">Message</label>' +
+    '      <textarea id="bc-body" rows="10" placeholder="Plain text. URLs will be auto-linked. We will add a greeting (Hi [first name],) and a footer automatically."></textarea>' +
+    '      <small style="color:#6b7280;">Plain text only. Each customer gets a personalized email with their first name. Replies go to your contact email.</small>' +
+    '    </div>' +
+    '    <div class="bc-actions">' +
+    '      <button class="btn btn-outline" id="bc-refresh-btn">Refresh recipients</button>' +
+    '      <button class="btn btn-primary" id="bc-send-btn" disabled>Send to all active customers</button>' +
+    '    </div>' +
+    '    <div id="bc-result" style="margin-top:16px;"></div>' +
+    '  </div>' +
+    '</div>' +
+    '<div class="panel" style="margin-top:24px;">' +
+    '  <div class="panel-header"><h2>Recent Broadcasts</h2></div>' +
+    '  <div id="bc-log" class="panel-body"><div class="loading-inline">Loading log&hellip;</div></div>' +
+    '</div>';
+
+  refreshBroadcastPreview();
+  refreshBroadcastLog();
+
+  document.getElementById('bc-refresh-btn').addEventListener('click', refreshBroadcastPreview);
+  document.getElementById('bc-send-btn').addEventListener('click', confirmAndSendBroadcast);
+}
+
+function refreshBroadcastPreview() {
+  var box = document.getElementById('bc-preview');
+  var sendBtn = document.getElementById('bc-send-btn');
+  if (!box) return;
+  box.className = 'bc-preview-box loading';
+  box.textContent = 'Loading recipient count\u2026';
+  if (sendBtn) sendBtn.disabled = true;
+
+  apiCall('admin_broadcast_preview', null, function(err, res) {
+    if (err || !res || res.error) {
+      box.className = 'bc-preview-box error';
+      box.textContent = 'Could not load recipient count: ' + ((res && res.error) || (err && err.message) || 'unknown');
+      return;
+    }
+    _broadcastPreview = res;
+    box.className = 'bc-preview-box';
+    var html = '<strong>' + res.count + '</strong> active customer(s) will receive this email. ';
+    html += '<small>(Daily quota remaining: ' + res.quotaRemaining + ')</small>';
+    if (res.sampleNames && res.sampleNames.length) {
+      html += '<details style="margin-top:8px;"><summary style="cursor:pointer;color:#6b7280;font-size:0.85rem;">Sample recipients</summary>' +
+              '<ul style="margin:6px 0 0 18px;font-size:0.85rem;color:#374151;">';
+      res.sampleNames.forEach(function(n) { html += '<li>' + esc(n) + '</li>'; });
+      if (res.count > res.sampleNames.length) html += '<li>&hellip; and ' + (res.count - res.sampleNames.length) + ' more</li>';
+      html += '</ul></details>';
+    }
+    box.innerHTML = html;
+    if (sendBtn) sendBtn.disabled = (res.count === 0);
+  });
+}
+
+function refreshBroadcastLog() {
+  var box = document.getElementById('bc-log');
+  if (!box) return;
+  apiCall('admin_broadcast_log', null, function(err, res) {
+    if (err || !res || res.error) {
+      box.innerHTML = '<div class="empty-state"><p>Could not load broadcast log.</p></div>';
+      return;
+    }
+    var rows = res.log || [];
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty-state"><p>No broadcasts sent yet.</p></div>';
+      return;
+    }
+    var html = '<div class="no-pad"><table class="data-table">';
+    html += '<tr><th>When</th><th>Subject</th><th>Sender</th><th>Sent</th><th>Failed</th></tr>';
+    rows.forEach(function(r) {
+      var failed = parseInt(r['Failed Count'], 10) || 0;
+      html += '<tr>';
+      html += '<td>' + formatDate(r['Timestamp']) + '</td>';
+      html += '<td>' + esc(r['Subject']) + '</td>';
+      html += '<td><small>' + esc(r['Sender Email']) + '</small></td>';
+      html += '<td><strong>' + esc(r['Sent Count']) + '</strong> / ' + esc(r['Recipient Count']) + '</td>';
+      html += '<td>' + (failed > 0 ? '<span class="badge badge-cannot-install">' + failed + '</span>' : '0') + '</td>';
+      html += '</tr>';
+    });
+    html += '</table></div>';
+    box.innerHTML = html;
+  });
+}
+
+function confirmAndSendBroadcast() {
+  if (!_broadcastPreview || !_broadcastPreview.count) {
+    alert('Recipient count not loaded. Click "Refresh recipients" first.');
+    return;
+  }
+  var subject = document.getElementById('bc-subject').value.trim();
+  var body = document.getElementById('bc-body').value.trim();
+  if (subject.length < 3) { alert('Subject too short.'); return; }
+  if (body.length < 10) { alert('Message body too short.'); return; }
+
+  var count = _broadcastPreview.count;
+  confirmModal({
+    title: 'Send Broadcast?',
+    message: 'This will email ' + count + ' active customer(s). This cannot be undone. Type the recipient count (' + count + ') to confirm.',
+    confirmText: 'Send to ' + count,
+    destructive: true,
+    onConfirm: function(done) {
+      apiCall('admin_broadcast_send', {
+        subject: subject,
+        body: body,
+        ack_count: count
+      }, function(err, res) {
+        if (err || !res || res.error) {
+          var msg;
+          if (res && res.error === 'count_mismatch') msg = res.message;
+          else if (res && res.error === 'too_many_recipients') msg = 'Too many recipients (' + res.count + '). Cap is ' + res.max + '. Set BROADCAST_MAX_RECIPIENTS in Script Properties to raise it.';
+          else if (res && res.error === 'quota_exceeded') msg = 'Daily mail quota would be exceeded (need ' + res.needed + ', have ' + res.available + '). Try again tomorrow.';
+          else msg = (res && res.error) || (err && err.message) || 'unknown';
+          done(msg);
+          return;
+        }
+        done();
+        var resultBox = document.getElementById('bc-result');
+        if (resultBox) {
+          var html = '<div class="form-message success" style="display:block;">Sent to ' + res.sent + ' of ' + res.recipients + ' customers.';
+          if (res.failed > 0) {
+            html += ' <strong>' + res.failed + ' failed:</strong> ' + esc((res.failedRecipients || []).join(', '));
+          }
+          html += '</div>';
+          resultBox.innerHTML = html;
+        }
+        document.getElementById('bc-subject').value = '';
+        document.getElementById('bc-body').value = '';
+        refreshBroadcastLog();
+      });
+    }
+  });
 }

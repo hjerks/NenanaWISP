@@ -461,6 +461,129 @@ function sendSurveyRejectedEmail_(email, name, message) {
   });
 }
 
+// ── Broadcast email ────────────────────────────────────────
+
+/**
+ * Build the list of broadcast recipients - active customers only.
+ * Returns array of { email, name, plan }.
+ */
+function getBroadcastRecipients_() {
+  var customers = getDataAsObjects_(TAB_CUSTOMERS);
+  return customers
+    .filter(function(c) { return String(c['Subscription Status']).toLowerCase() === 'active'; })
+    .map(function(c) {
+      return {
+        email: String(c['Email'] || '').trim(),
+        name: String(c['Full Name'] || '').trim(),
+        plan: String(c['Plan'] || '').trim()
+      };
+    })
+    .filter(function(r) { return r.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email); });
+}
+
+/**
+ * Send a broadcast (e.g., outage notice) to all active customers.
+ *
+ * Safeguards:
+ *   - Subject + body required, body min length
+ *   - Hard-cap on recipient count (BROADCAST_MAX_RECIPIENTS)
+ *   - Aborts if MailApp daily quota would be exceeded
+ *   - Logs every send to Broadcast_Log
+ *   - Per-message try/catch so one bounce doesn't kill the whole run
+ *
+ * Returns { ok, sent, failed, recipients, failedRecipients, error? }
+ */
+function sendBroadcast_(opts) {
+  var subject = String(opts.subject || '').trim();
+  var body = String(opts.body || '').trim();
+  var senderEmail = String(opts.senderEmail || '').trim();
+  if (!subject || subject.length < 3) return { error: 'subject_too_short' };
+  if (!body || body.length < 10) return { error: 'body_too_short' };
+
+  var recipients = getBroadcastRecipients_();
+  if (!recipients.length) return { error: 'no_recipients' };
+
+  var maxRecipients = parseInt(propOr('BROADCAST_MAX_RECIPIENTS', '200'), 10);
+  if (recipients.length > maxRecipients) {
+    return { error: 'too_many_recipients', count: recipients.length, max: maxRecipients };
+  }
+
+  var quotaLeft = MailApp.getRemainingDailyQuota();
+  if (quotaLeft < recipients.length) {
+    return { error: 'quota_exceeded', needed: recipients.length, available: quotaLeft };
+  }
+
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var replyTo = propOr('CONTACT_EMAIL', '');
+
+  // Convert plain-text body to safe HTML: escape, then convert newlines to
+  // paragraphs/breaks, then auto-link bare URLs.
+  var bodyHtml = '<p style="color:#374151;line-height:1.6;white-space:pre-wrap;">' +
+    autoLinkUrls_(sanitize_(body)) + '</p>';
+
+  var sent = [];
+  var failed = [];
+  for (var i = 0; i < recipients.length; i++) {
+    var r = recipients[i];
+    var firstName = r.name.split(' ')[0] || 'there';
+    var fullBody =
+      '<h2 style="margin:0 0 16px;color:#1a5276;">' + sanitize_(subject) + '</h2>' +
+      '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+      bodyHtml +
+      '<p style="color:#6b7280;font-size:13px;margin-top:20px;">- The ' + sanitize_(fromName) + ' team</p>';
+
+    try {
+      MailApp.sendEmail({
+        to: r.email,
+        subject: subject,
+        htmlBody: buildEmailHtml_(fullBody),
+        name: fromName,
+        replyTo: replyTo
+      });
+      sent.push(r.email);
+    } catch (err) {
+      Logger.log('Broadcast send failed for ' + r.email + ': ' + err.message);
+      failed.push(r.email + ' (' + err.message + ')');
+    }
+  }
+
+  // Log to Broadcast_Log
+  try {
+    ensureHeaders_(TAB_BROADCAST_LOG, BROADCAST_LOG_HEADERS);
+    appendRow_(TAB_BROADCAST_LOG, [
+      new Date(),
+      senderEmail,
+      subject,
+      body,
+      recipients.length,
+      sent.length,
+      failed.length,
+      sent.join(', '),
+      failed.join(', ')
+    ]);
+  } catch (logErr) {
+    Logger.log('Broadcast log write failed: ' + logErr.message);
+  }
+
+  return {
+    ok: true,
+    sent: sent.length,
+    failed: failed.length,
+    recipients: recipients.length,
+    failedRecipients: failed
+  };
+}
+
+/**
+ * Convert bare URLs in a string to <a> tags. Input MUST already be
+ * HTML-escaped (this function does no further escaping on the URL text).
+ */
+function autoLinkUrls_(escapedText) {
+  return escapedText.replace(/(https?:\/\/[^\s<]+)/g, function(url) {
+    return '<a href="' + url + '" style="color:#2e86c1;">' + url + '</a>';
+  });
+}
+
 /**
  * Notify the customer that the install is complete and payment is now due.
  */

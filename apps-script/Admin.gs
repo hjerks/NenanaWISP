@@ -337,6 +337,15 @@ function handleAdminRequest_(e) {
     case 'admin_complete_install':
       result = adminCompleteInstall_(e.parameter);
       break;
+    case 'admin_broadcast_preview':
+      result = adminBroadcastPreview_();
+      break;
+    case 'admin_broadcast_send':
+      result = adminBroadcastSend_(e.parameter, adminEmail);
+      break;
+    case 'admin_broadcast_log':
+      result = adminBroadcastLog_();
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -1679,6 +1688,43 @@ function adminGeocode_(params) {
     lat: parseFloat(params.lat),
     lon: parseFloat(params.lon)
   });
+}
+
+// ── Broadcast (mass email) ─────────────────────────────────
+
+function adminBroadcastPreview_() {
+  var recipients = getBroadcastRecipients_();
+  return {
+    ok: true,
+    count: recipients.length,
+    quotaRemaining: MailApp.getRemainingDailyQuota(),
+    sampleNames: recipients.slice(0, 5).map(function(r) { return r.name + ' <' + r.email + '>'; })
+  };
+}
+
+function adminBroadcastSend_(params, senderEmail) {
+  var subject = String(params.subject || '');
+  var body = String(params.body || '');
+  // Confirmation token guards against accidental double-clicks / replays.
+  // The client must echo back the recipient count it just saw on preview.
+  var ackCount = parseInt(params.ack_count || '0', 10);
+  var actual = getBroadcastRecipients_().length;
+  if (!ackCount || ackCount !== actual) {
+    return { error: 'count_mismatch', message: 'Recipient count changed since preview (was ' + ackCount + ', now ' + actual + '). Refresh and try again.' };
+  }
+  return sendBroadcast_({ subject: subject, body: body, senderEmail: senderEmail });
+}
+
+function adminBroadcastLog_() {
+  ensureHeaders_(TAB_BROADCAST_LOG, BROADCAST_LOG_HEADERS);
+  var rows = getDataAsObjects_(TAB_BROADCAST_LOG);
+  // Most recent first, cap to last 25 to keep the response small.
+  rows.sort(function(a, b) {
+    var da = new Date(a['Timestamp']).getTime();
+    var db = new Date(b['Timestamp']).getTime();
+    return db - da;
+  });
+  return { ok: true, log: rows.slice(0, 25) };
 }
 
 // ── Survey / Install Workflow ──────────────────────────────

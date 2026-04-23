@@ -318,6 +318,25 @@ body {
 .pill-approved { background: #dbeafe; color: #1e40af; }
 .pill-awaiting { background: #fde68a; color: #78350f; }
 .pill-paid     { background: #dcfce7; color: #166534; }
+
+/* Broadcast view */
+.bc-preview-box {
+  padding: 14px 16px;
+  background: #f1f5f9;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 0.95rem;
+}
+.bc-preview-box.loading { color: var(--color-text-light); font-style: italic; }
+.bc-preview-box.error { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+.bc-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.bc-actions .btn-primary { min-width: 220px; }
 .badge-checkout-sent { background: #e0e7ff; color: #3730a3; }
 .badge-paid { background: #dcfce7; color: #166534; }
 
