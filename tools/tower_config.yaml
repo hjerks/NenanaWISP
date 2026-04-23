@@ -1,0 +1,64 @@
+# Nenana WISP coverage model - tower & RF configuration.
+# Edit this file and re-run build_coverage.py to regenerate the coverage map.
+
+# Coverage-area scope (bounding box is centered on the first tower unless overridden).
+coverage:
+  radius_km: 5.0          # half-width of the square coverage box
+  grid_res_m: 30          # grid cell size; matches Copernicus GLO-30 DEM resolution
+  # Optional explicit bounds override (south, west, north, east). Leave null to auto-compute.
+  bounds_override: null
+
+# Receiver (CPE) assumptions - applied to every grid cell.
+cpe:
+  antenna_gain_dbi: 25.0        # Cambium Force 4525 integrated dish
+  mount_height_m: 5.0           # typical rooftop
+  feeder_loss_db: 0.0           # integrated antenna
+
+# Classification thresholds (RSSI at the CPE input, dBm).
+thresholds:
+  good_min_dbm: -70.0           # >= this is Good (green)
+  marginal_min_dbm: -85.0       # >= this and < good is Marginal (yellow); below is No-signal (red)
+
+# Propagation model selection.
+# "auto": try itmlogic (Longley-Rice), fall back to knife-edge if unavailable.
+# "knife_edge": terrain-aware Deygout multiple-knife-edge diffraction + FSPL (fast, no extra deps).
+# "itmlogic": force Longley-Rice via itmlogic.
+propagation:
+  model: auto
+  climate: 5                    # ITM climate code (5 = Continental Temperate) - ignored by knife_edge
+  polarization: horizontal      # horizontal | vertical - ignored by knife_edge
+
+# DEM (elevation) source.
+dem:
+  # Option 1 (preferred): OpenTopography API. Free key from https://portal.opentopography.org/
+  # Put the key in tools/.opentopography_key (one line) - that file is git-ignored.
+  # Dataset options: SRTMGL1 (doesn't cover >60N), COP30 (global, covers Alaska), AW3D30.
+  opentopography_dataset: COP30
+  # Option 2 (fallback): manually place a GeoTIFF at tools/cache/dem.tif covering the bbox.
+  manual_dem_path: cache/dem.tif
+
+# Towers. One entry per physical site. One sector entry per sector on each tower.
+towers:
+  - id: Nenana_4500
+    lat: 64.564613
+    lon: -149.077957
+    # Ground elevation is auto-sampled from the DEM at (lat, lon) unless you set it here.
+    ground_elev_m: null
+    antenna_centerline_agl_m: 18.288   # 60 ft tower, antenna at top
+    frequency_mhz: 5850
+    feeder_loss_db: 0.0               # integrated antenna on ePMP 4500 AP
+    # Per-sector list.
+    sectors:
+      - id: A
+        azimuth_deg: 255               # main lobe pointing ~WSW (user said 250-260, using midpoint)
+        mech_downtilt_deg: -1.0        # mechanically uptilted 1 deg (negative = uptilt)
+        elec_downtilt_deg: 0.0
+        tx_power_dbm: 30.0             # radio port output
+        # Integrated antenna on ePMP 4500 8x8 AP (90 deg H sector). We use an ideal pattern:
+        # cosine roll-off to the 3 dB beamwidth, then -20 dB floor. Swap in a real .msi later.
+        antenna:
+          model: ePMP_4500_integrated_90deg
+          peak_gain_dbi: 17.0
+          h_beamwidth_deg: 90
+          v_beamwidth_deg: 6
+          front_to_back_db: 25

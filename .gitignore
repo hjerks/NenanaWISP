@@ -16,3 +16,8 @@ desktop.ini
 
 # Reference files
 gptreference.txt
+
+# Coverage-model tooling: cached DEM tiles and API keys
+tools/cache/
+tools/.opentopography_key
+
