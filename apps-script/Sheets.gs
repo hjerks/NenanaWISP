@@ -323,21 +323,30 @@ function createCustomerFromLead_(leadRowNum, stripeSubId, subStatus) {
 /**
  * Create an install row from a lead row.
  * Called when checkout.session.completed fires.
+ *
+ * In the new survey-first flow, the install is already physically done
+ * before the customer pays. Pass alreadyComplete=true to mark the install
+ * row as "Completed" (with today as the completion date and the lead's
+ * confirmed install date as the scheduled date) instead of "Pending".
  */
-function createInstallFromLead_(leadRowNum) {
+function createInstallFromLead_(leadRowNum, alreadyComplete) {
   var leadData = readRow_(TAB_LEADS, leadRowNum, LEADS_HEADERS.length);
+  var requestedDate = leadData[L.REQUESTED_INSTALL_DATE - 1];
+  var scheduled = (requestedDate && String(requestedDate).toUpperCase() !== 'ASAP') ? requestedDate : '';
 
+  var status = alreadyComplete ? 'Completed' : 'Pending';
+  var completionDate = alreadyComplete ? new Date() : '';
   var installRow = [
     leadData[L.FULL_NAME - 1],        // Customer Name
     leadData[L.EMAIL - 1],            // Email
     leadData[L.ADDRESS - 1] + ', ' + leadData[L.CITY - 1] + ', ' + leadData[L.STATE - 1] + ' ' + leadData[L.ZIP - 1], // Address
     leadData[L.PLAN - 1],             // Plan
-    leadData[L.INSTALL_PREF - 1],     // Requested Preference
-    '',                                // Scheduled Date
+    leadData[L.INSTALL_PREF - 1],     // Requested Preference (legacy field)
+    scheduled,                         // Scheduled Date
     '',                                // Technician
     '',                                // Equipment Assigned
-    'Pending',                         // Status
-    '',                                // Completion Date
+    status,                            // Status
+    completionDate,                    // Completion Date
     ''                                 // Notes
   ];
 

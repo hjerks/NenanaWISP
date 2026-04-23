@@ -92,7 +92,13 @@ function handleCheckoutCompleted_(session) {
     return;
   }
 
-  // Update lead status
+  // Capture the prior status BEFORE we overwrite it. In the survey-first
+  // flow, payment only happens after the tech has marked the install
+  // complete (status "Awaiting Payment"); in the legacy flow the install
+  // hasn't happened yet (status "Checkout Sent" or anything else).
+  var priorStatus = String(readRow_(TAB_LEADS, leadRow, LEADS_HEADERS.length)[L.LEAD_STATUS - 1] || '');
+  var installAlreadyComplete = (priorStatus === 'Awaiting Payment');
+
   writeCell_(TAB_LEADS, leadRow, L.LEAD_STATUS, 'Paid');
   writeCell_(TAB_LEADS, leadRow, L.STRIPE_CUST_ID, custId);
 
@@ -107,8 +113,9 @@ function handleCheckoutCompleted_(session) {
     Logger.log('Portal link generation failed: ' + portalErr.message);
   }
 
-  // Create install row
-  createInstallFromLead_(leadRow);
+  // Create install row. In the new flow the install was already done
+  // before payment, so mark it Completed up front.
+  createInstallFromLead_(leadRow, installAlreadyComplete);
 
   // Send welcome email
   var leadData = readRow_(TAB_LEADS, leadRow, LEADS_HEADERS.length);
