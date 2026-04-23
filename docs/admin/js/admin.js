@@ -968,11 +968,14 @@ function loadLeads(container) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load leads.</p></div>';
       return;
     }
-    var visibleLeads = (data.leads || []).filter(function(l) { return l['Lead Status'] !== 'Deleted'; });
+    // All non-deleted leads -- used for summary pill counts so paid leads
+    // still show up in the rollup even when hidden from the table.
+    var allLeads = (data.leads || []).filter(function(l) { return l['Lead Status'] !== 'Deleted'; });
+    // Active table view: hide Paid leads. They live in the Customers tab now.
+    var visibleLeads = allLeads.filter(function(l) { return l['Lead Status'] !== 'Paid'; });
 
-    // Counts for a top-of-view summary.
     var counts = { survey: 0, approved: 0, awaiting: 0, paid: 0 };
-    visibleLeads.forEach(function(l) {
+    allLeads.forEach(function(l) {
       var s = l['Lead Status'];
       if (s === 'Survey Requested')       counts.survey++;
       else if (s === 'Survey Approved')   counts.approved++;
@@ -981,7 +984,7 @@ function loadLeads(container) {
     });
 
     var html = '<div class="panel">';
-    html += '<div class="panel-header"><h2>Leads (' + visibleLeads.length + ')</h2></div>';
+    html += '<div class="panel-header"><h2>Leads (' + visibleLeads.length + ' active)</h2></div>';
 
     html += '<div class="leads-summary">';
     html += '<div class="leads-summary-pill pill-survey">' + counts.survey + ' need survey</div>';
