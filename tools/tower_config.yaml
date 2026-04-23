@@ -61,4 +61,4 @@ towers:
           peak_gain_dbi: 17.0
           h_beamwidth_deg: 90
           v_beamwidth_deg: 6
-          front_to_back_db: 25
+          front_to_back_db: 40
