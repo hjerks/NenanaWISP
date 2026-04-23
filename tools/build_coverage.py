@@ -98,6 +98,7 @@ class Config:
     cpe_feeder_loss_db: float
     good_dbm: float
     marginal_dbm: float
+    calibration_offset_db: float
     model: str
     climate: int
     polarization: str
@@ -149,6 +150,7 @@ def load_config(path: Path) -> Config:
         cpe_feeder_loss_db=float(raw["cpe"]["feeder_loss_db"]),
         good_dbm=float(raw["thresholds"]["good_min_dbm"]),
         marginal_dbm=float(raw["thresholds"]["marginal_min_dbm"]),
+        calibration_offset_db=float(raw.get("calibration_offset_db", 0.0)),
         model=str(raw["propagation"]["model"]).lower(),
         climate=int(raw["propagation"]["climate"]),
         polarization=str(raw["propagation"]["polarization"]).lower(),
@@ -447,6 +449,7 @@ def rssi_for_path(
         - l_db
         + cfg.cpe_gain_dbi
         - cfg.cpe_feeder_loss_db
+        + cfg.calibration_offset_db
     )
     return rssi_dbm
 
@@ -548,6 +551,7 @@ def write_json(
             "good_min_dbm": cfg.good_dbm,
             "marginal_min_dbm": cfg.marginal_dbm,
         },
+        "calibration_offset_db": cfg.calibration_offset_db,
         "towers": [
             {
                 "id": t.id,
