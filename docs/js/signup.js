@@ -163,10 +163,30 @@ function runCoverageCheck() {
       var geo = results[1];
 
       if (geo.error || !isFinite(geo.lat) || !isFinite(geo.lon)) {
+        // Make diagnostics visible in console + UI so we can tell whether
+        // it's a missing API key, a deployment that hasn't been refreshed,
+        // a quota issue, or a genuine no-match address.
+        console.warn('[signup] geocode response:', geo);
+        var why;
+        if (geo.error === 'no_key') {
+          why = 'The Google Geocoding API key is not configured on the server yet.';
+        } else if (geo.error === 'no_result') {
+          why = 'Google could not find that address (status: ' + (geo.status || 'unknown') + '). Please double-check the street, city, and ZIP.';
+        } else if (geo.error === 'fetch_failed') {
+          why = 'The geocoding service is unreachable right now.';
+        } else if (geo.status === 'ok' && !geo.lat) {
+          // The Apps Script default doGet returned, meaning the new
+          // public_geocode endpoint isn't deployed yet.
+          why = 'Geocoding endpoint not deployed. The signup will still work; the tech will review your address manually.';
+        } else if (geo.error) {
+          why = 'Geocoding error: ' + geo.error + (geo.message ? ' (' + geo.message + ')' : '');
+        } else {
+          why = 'We could not find that address on the map. The tech will still review it.';
+        }
         showCoverageResult({
           cls: 'unknown',
           label: 'Could not locate address',
-          desc: 'We could not find that address on the map. Please double-check the street, city, and ZIP. The tech will still review it.'
+          desc: why
         }, null);
         return;
       }
