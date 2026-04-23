@@ -1643,9 +1643,11 @@ function geocodeAddress_(opts) {
     var address = String(opts.address || '').trim();
     if (!address) return { error: 'missing_address' };
     // Scope to Alaska so "100 Main St" doesn't match a different state.
+    // NOTE: the '|' between components MUST be url-encoded (%7C) or
+    // UrlFetchApp rejects the request with "Invalid argument".
     url = 'https://maps.googleapis.com/maps/api/geocode/json?address='
       + encodeURIComponent(address)
-      + '&components=administrative_area:AK|country:US'
+      + '&components=' + encodeURIComponent('administrative_area:AK|country:US')
       + '&key=' + encodeURIComponent(apiKey);
   }
 
@@ -1663,8 +1665,10 @@ function geocodeAddress_(opts) {
       location_type: r.geometry.location_type
     };
   } catch (e) {
+    // Log the full exception (may contain the request URL + API key) only
+    // to server logs, never echo it to the client.
     Logger.log('geocodeAddress error: ' + e.message);
-    return { error: 'fetch_failed', message: e.message };
+    return { error: 'fetch_failed', message: 'upstream geocoding request failed' };
   }
 }
 
