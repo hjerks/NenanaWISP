@@ -444,6 +444,18 @@ function createProductInvoice_(opts) {
   var amountCents = parseInt(price.unit_amount, 10) || 0;
   var currency = price.currency || 'usd';
 
+  if (!amountCents || amountCents < 50) {
+    throw new Error(
+      'Price ' + priceId + ' has no usable unit_amount. ' +
+      'unit_amount=' + price.unit_amount +
+      ', unit_amount_decimal=' + price.unit_amount_decimal +
+      ', billing_scheme=' + price.billing_scheme +
+      ', type=' + price.type +
+      ', currency=' + price.currency +
+      ', active=' + price.active
+    );
+  }
+
   // Grab the product name so the line item description says
   // "Residential 100/20 Mbps" instead of a bare price ID.
   var lineDescription = 'Plan payment';
