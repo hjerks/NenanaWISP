@@ -19,16 +19,24 @@ thresholds:
   good_min_dbm: -70.0           # >= this is Good (green)
   marginal_min_dbm: -85.0       # >= this and < good is Marginal (yellow); below is No-signal (red)
 
-# Global calibration offset (dB) applied to every modeled RSSI.
-# Tuned against ground-truth SMs so the model matches reality. The propagation
-# model handles the shape (distance, diffraction) - this captures the constant
-# fudge from things we can't model from first principles (per-chain RSSI
-# reporting conventions, beamforming math, real-world clutter loss vs FSPL).
+# Clutter / excess-path-loss model.
+# Adds extra loss beyond FSPL + knife-edge diffraction to capture
+# vegetation, ground multipath, and general clutter that the DEM can't see
+# (trees, buildings).
 #
-# Calibration log:
-#   2026-04-23: Baker SM (921 m, 1.3 deg off-axis) measured -83 dBm DL RSSI.
-#               Modeled -40 dBm before offset -> offset = -43 dB.
-calibration_offset_db: -43.0
+# Loss applied (dB) = intercept_db + slope_db_per_decade * log10(d / ref_distance_m)
+# Clamped at >= 0 so it never becomes a gain at very short distances.
+#
+# Calibration log (measured DL RSSI vs modeled link budget, 2026-04-23):
+#   SM-148 Washeteria  110 m,  88 deg off-axis, -56 dBm (meas), -57 dBm (model) -> 0 dB excess
+#   SM-109 NIC         670 m,  15 deg off-axis, -58 dBm (meas), -34 dBm (model) -> 24 dB excess
+#   SM-102 Baker       921 m,  1.3 deg off-axis (excluded - dish between 2 buildings)
+#
+# Two-point fit over clean points gives n_effective ~ 5.
+clutter:
+  ref_distance_m: 100
+  intercept_db: -3.63
+  slope_db_per_decade: 24.85
 
 # Propagation model selection.
 # "auto": try itmlogic (Longley-Rice), fall back to knife-edge if unavailable.

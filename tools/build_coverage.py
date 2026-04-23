@@ -98,7 +98,9 @@ class Config:
     cpe_feeder_loss_db: float
     good_dbm: float
     marginal_dbm: float
-    calibration_offset_db: float
+    clutter_ref_m: float
+    clutter_intercept_db: float
+    clutter_slope_db_per_decade: float
     model: str
     climate: int
     polarization: str
@@ -150,7 +152,9 @@ def load_config(path: Path) -> Config:
         cpe_feeder_loss_db=float(raw["cpe"]["feeder_loss_db"]),
         good_dbm=float(raw["thresholds"]["good_min_dbm"]),
         marginal_dbm=float(raw["thresholds"]["marginal_min_dbm"]),
-        calibration_offset_db=float(raw.get("calibration_offset_db", 0.0)),
+        clutter_ref_m=float(raw["clutter"]["ref_distance_m"]),
+        clutter_intercept_db=float(raw["clutter"]["intercept_db"]),
+        clutter_slope_db_per_decade=float(raw["clutter"]["slope_db_per_decade"]),
         model=str(raw["propagation"]["model"]).lower(),
         climate=int(raw["propagation"]["climate"]),
         polarization=str(raw["propagation"]["polarization"]).lower(),
@@ -442,14 +446,20 @@ def rssi_for_path(
             d_axis, profile, tx_h_agl, rx_h_agl, freq_hz
         )
 
+    # Clutter: log-distance excess loss calibrated against ground-truth SMs.
+    clutter_db = cfg.clutter_intercept_db + cfg.clutter_slope_db_per_decade * math.log10(
+        max(d_m, 1.0) / cfg.clutter_ref_m
+    )
+    clutter_db = max(0.0, clutter_db)
+
     rssi_dbm = (
         sector.tx_power_dbm
         - tower.feeder_loss_db
         + g_tx
         - l_db
+        - clutter_db
         + cfg.cpe_gain_dbi
         - cfg.cpe_feeder_loss_db
-        + cfg.calibration_offset_db
     )
     return rssi_dbm
 
@@ -551,7 +561,11 @@ def write_json(
             "good_min_dbm": cfg.good_dbm,
             "marginal_min_dbm": cfg.marginal_dbm,
         },
-        "calibration_offset_db": cfg.calibration_offset_db,
+        "clutter": {
+            "ref_distance_m": cfg.clutter_ref_m,
+            "intercept_db": cfg.clutter_intercept_db,
+            "slope_db_per_decade": cfg.clutter_slope_db_per_decade,
+        },
         "towers": [
             {
                 "id": t.id,
