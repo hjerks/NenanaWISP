@@ -507,6 +507,166 @@ a:hover {
   display: block;
 }
 
+/* ── Multi-step signup ─────────────────────────────────── */
+
+.signup-steps {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 28px;
+  flex-wrap: wrap;
+}
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.step-item .step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+.step-item.active {
+  background: #1a5276;
+  color: #fff;
+}
+.step-item.active .step-num { background: #fff; color: #1a5276; }
+.step-item.done {
+  background: #d1fae5;
+  color: #065f46;
+}
+.step-item.done .step-num { background: #059669; color: #fff; }
+
+.step-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  align-items: center;
+}
+.step-actions .submit-btn { flex: 1; }
+
+.btn-secondary {
+  padding: 12px 24px;
+  background-color: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.btn-secondary:hover { background-color: #e2e8f0; }
+
+/* ── Coverage result ───────────────────────────────────── */
+
+.coverage-result {
+  padding: 20px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 14px;
+}
+.coverage-result.loading { color: #64748b; font-style: italic; }
+.coverage-result.good     { background: #f0fdf4; border-color: #86efac; }
+.coverage-result.marginal { background: #fefce8; border-color: #fde047; }
+.coverage-result.bad      { background: #fef2f2; border-color: #fca5a5; }
+.coverage-result.unknown  { background: #f1f5f9; border-color: #cbd5e1; }
+
+.cov-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #fff;
+  margin-bottom: 10px;
+}
+.cov-good     { background: #16a34a; }
+.cov-marginal { background: #ca8a04; }
+.cov-bad      { background: #dc2626; }
+.cov-unknown  { background: #64748b; }
+
+.cov-rssi {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+.coverage-disclaimer {
+  font-size: 0.85rem;
+  color: #475569;
+  background: #fff;
+  border-left: 3px solid #94a3b8;
+  padding: 12px 14px;
+  border-radius: 4px;
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* ── Install date picker ───────────────────────────────── */
+
+.date-picker > p {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 14px;
+}
+.date-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.date-radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.date-radio:hover { background: #f8fafc; }
+.date-radio input[type="radio"] { accent-color: #1a5276; }
+.date-input-row {
+  padding: 14px;
+  background: #f8fafc;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.date-input-row input[type="date"] {
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  width: 100%;
+  max-width: 260px;
+}
+.date-input-row .form-error { display: none; }
+
+.success-screen {
+  text-align: center;
+  padding: 24px 8px;
+}
+
 /* ── About Section ─────────────────────────────────────── */
 
 .about-content {

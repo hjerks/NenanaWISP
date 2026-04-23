@@ -968,35 +968,65 @@ function loadLeads(container) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load leads.</p></div>';
       return;
     }
-    // Filter out deleted leads
     var visibleLeads = (data.leads || []).filter(function(l) { return l['Lead Status'] !== 'Deleted'; });
-    var html = '<div class="panel"><div class="panel-header"><h2>Leads (' + visibleLeads.length + ')</h2></div>';
+
+    // Counts for a top-of-view summary.
+    var counts = { survey: 0, approved: 0, awaiting: 0, paid: 0 };
+    visibleLeads.forEach(function(l) {
+      var s = l['Lead Status'];
+      if (s === 'Survey Requested')       counts.survey++;
+      else if (s === 'Survey Approved')   counts.approved++;
+      else if (s === 'Awaiting Payment' || s === 'Checkout Sent') counts.awaiting++;
+      else if (s === 'Paid')              counts.paid++;
+    });
+
+    var html = '<div class="panel">';
+    html += '<div class="panel-header"><h2>Leads (' + visibleLeads.length + ')</h2></div>';
+
+    html += '<div class="leads-summary">';
+    html += '<div class="leads-summary-pill pill-survey">' + counts.survey + ' need survey</div>';
+    html += '<div class="leads-summary-pill pill-approved">' + counts.approved + ' survey approved</div>';
+    html += '<div class="leads-summary-pill pill-awaiting">' + counts.awaiting + ' awaiting payment</div>';
+    html += '<div class="leads-summary-pill pill-paid">' + counts.paid + ' paid</div>';
+    html += '</div>';
+
     if (visibleLeads.length > 0) {
       var sortedLeads = applySort(visibleLeads, 'leads');
       html += '<div class="panel-body no-pad"><table class="data-table">';
       html += '<tr>';
       html += sortableTh('leads', 'Date', 'Timestamp', 'date');
       html += sortableTh('leads', 'Name', 'Full Name', 'text');
-      html += sortableTh('leads', 'Email', 'Email', 'text');
+      html += sortableTh('leads', 'Address', 'Service Address', 'text');
       html += sortableTh('leads', 'Plan', 'Plan', 'text');
+      html += sortableTh('leads', 'Req. Install', 'Requested Install Date', 'text');
       html += sortableTh('leads', 'Status', 'Lead Status', 'text');
       html += '<th></th></tr>';
       sortedLeads.forEach(function(l) {
+        var status = l['Lead Status'] || '';
         html += '<tr>';
         html += '<td>' + formatDate(l['Timestamp']) + '</td>';
-        html += '<td>' + esc(l['Full Name']) + '</td>';
-        html += '<td>' + esc(l['Email']) + '</td>';
+        html += '<td><strong>' + esc(l['Full Name']) + '</strong><br><small style="color:#6b7280;">' + esc(l['Email']) + '</small></td>';
+        html += '<td>' + esc(l['Service Address'] || '') + '</td>';
         html += '<td>' + esc(l['Plan']) + '</td>';
-        html += '<td>' + badge(l['Lead Status']) + '</td>';
+        html += '<td>' + esc(l['Requested Install Date'] || '') + '</td>';
+        html += '<td>' + badge(status) + '</td>';
         html += '<td><div class="btn-group">';
         html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + JSON.stringify(l) + ')\'>Edit</button>';
-        if (l['Lead Status'] !== 'Paid') {
-          html += '<button class="btn btn-sm btn-success" onclick=\'convertLeadManual(' + l._rowNum + ', ' + JSON.stringify(l['Full Name'] || '') + ')\'>Mark Paid</button>';
-        }
-        if (l['Lead Status'] === 'Checkout Sent') {
-          html += '<button class="btn btn-sm btn-primary" onclick=\'resendCheckout(' + l._rowNum + ')\'>Resend</button>';
+
+        if (status === 'Survey Requested') {
+          html += '<button class="btn btn-sm btn-success" onclick=\'approveSurvey(' + l._rowNum + ', ' +
+                  JSON.stringify(l['Requested Install Date'] || '') + ')\'>Approve</button>';
+          html += '<button class="btn btn-sm btn-danger" onclick=\'rejectSurvey(' + l._rowNum + ')\'>Cannot Install</button>';
+        } else if (status === 'Survey Approved') {
+          html += '<button class="btn btn-sm btn-primary" onclick=\'completeInstall(' + l._rowNum + ', ' +
+                  JSON.stringify(l['Full Name'] || '') + ')\'>Install Complete &rarr; Send Payment</button>';
+          html += '<button class="btn btn-sm btn-danger" onclick=\'rejectSurvey(' + l._rowNum + ')\'>Cancel</button>';
+        } else if (status === 'Awaiting Payment' || status === 'Checkout Sent') {
+          html += '<button class="btn btn-sm btn-success" onclick=\'convertLeadManual(' + l._rowNum + ', ' +
+                  JSON.stringify(l['Full Name'] || '') + ')\'>Mark Paid</button>';
+          html += '<button class="btn btn-sm btn-outline" onclick=\'resendCheckout(' + l._rowNum + ')\'>Resend Link</button>';
           if (l['Checkout Link']) {
-            html += '<button class="btn btn-sm btn-outline" onclick=\'copyCheckoutLink("' + esc(l['Checkout Link']) + '")\'>Copy Link</button>';
+            html += '<button class="btn btn-sm btn-outline" onclick=\'copyCheckoutLink("' + esc(l['Checkout Link']) + '")\'>Copy</button>';
           }
         }
         html += '</div></td>';
@@ -1008,6 +1038,83 @@ function loadLeads(container) {
     }
     html += '</div>';
     container.innerHTML = html;
+  });
+}
+
+// ── Survey / Install workflow actions ──────────────────────
+
+function approveSurvey(rowNum, suggestedDate) {
+  var today = new Date();
+  var defaultDate = '';
+  if (suggestedDate && suggestedDate !== 'ASAP' && /^\d{4}-\d{2}-\d{2}$/.test(suggestedDate)) {
+    defaultDate = suggestedDate;
+  } else {
+    // Default to next business day + 2
+    var d = new Date();
+    var added = 0;
+    while (added < 2) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+    }
+    defaultDate = d.toISOString().slice(0, 10);
+  }
+
+  showModal('Approve Survey & Schedule Install', [
+    { label: 'Confirmed Install Date', key: 'scheduled_date', type: 'date', value: defaultDate, required: true },
+    { label: 'Note to Customer (optional)', key: 'message', type: 'textarea', value: '' }
+  ], function(vals) {
+    if (!vals.scheduled_date) { alert('Please pick an install date.'); return; }
+    apiCall('admin_approve_survey', {
+      row_num: rowNum,
+      scheduled_date: vals.scheduled_date,
+      message: vals.message || ''
+    }, function(err, res) {
+      if (err || (res && res.error)) {
+        alert('Approve failed: ' + ((res && res.message) || (err && err.message) || 'unknown'));
+        return;
+      }
+      closeModal();
+      delete cachedData['admin_leads'];
+      loadView('leads');
+    });
+  });
+}
+
+function rejectSurvey(rowNum) {
+  showModal('Cannot Install', [
+    { label: 'Reason (optional, shown to customer)', key: 'message', type: 'textarea', value: '' }
+  ], function(vals) {
+    apiCall('admin_reject_survey', {
+      row_num: rowNum,
+      message: vals.message || ''
+    }, function(err, res) {
+      if (err || (res && res.error)) {
+        alert('Reject failed: ' + ((res && res.message) || (err && err.message) || 'unknown'));
+        return;
+      }
+      closeModal();
+      delete cachedData['admin_leads'];
+      loadView('leads');
+    });
+  });
+}
+
+function completeInstall(rowNum, name) {
+  confirmModal({
+    title: 'Mark Install Complete for ' + (name || 'this customer') + '?',
+    message: 'This will create the Stripe customer, generate a payment link, and email it to the customer. They have 7 days to pay.',
+    confirmText: 'Send Payment Link',
+    onConfirm: function(done) {
+      apiCall('admin_complete_install', { row_num: rowNum }, function(err, res) {
+        if (err || (res && res.error)) {
+          done((res && res.message) || (err && err.message) || 'unknown error');
+          return;
+        }
+        delete cachedData['admin_leads'];
+        done();
+        loadView('leads');
+      });
+    }
   });
 }
 

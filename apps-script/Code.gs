@@ -65,6 +65,14 @@ function doGet(e) {
     return handleGoogleAuth_(e);
   }
 
+  // Public geocoding endpoint for the signup page coverage check.
+  // Scoped to AK addresses (see geocodeAddress_) so abuse vector is small.
+  if (action === 'public_geocode') {
+    var result = geocodeAddress_({ address: params.address });
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   // Default: simple status response
   return ContentService.createTextOutput(
     JSON.stringify({ status: 'ok', service: 'NenanaWISP Billing' })
@@ -96,9 +104,10 @@ function handleFormSubmission_(e) {
   var plan = String(p.plan).trim();
   var contactPref = String(p.contact_pref || '').trim();
   var contactMethod = String(p.contact_method || '').trim();
-  var installPref = String(p.install_pref || '').trim();
   var notes = String(p.notes || '').trim();
   var tosAgreed = String(p.tos_agreed || 'false').trim();
+  // 'YYYY-MM-DD' or 'ASAP'. Validation is light: tech reviews every request.
+  var requestedInstallDate = String(p.requested_install_date || 'ASAP').trim();
 
   // Validate email format
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -115,77 +124,80 @@ function handleFormSubmission_(e) {
     );
   }
 
-  // Generate a unique row key
   var rowKey = Utilities.getUuid();
 
-  // Create or find Stripe customer
-  var customer = createOrGetStripeCustomer_({
-    email: email,
-    name: fullName,
-    phone: phone,
-    address: { line1: address, city: city, state: state, zip: zip }
-  });
-
-  // Get the price ID for the selected plan
-  var priceId = getPriceIdForPlan_(plan);
-
-  // Check for optional installation fee
-  var installFeePrice = propOr('INSTALL_FEE_PRICE', '');
-
-  // Create checkout session
-  var session = createCheckoutSession_({
-    customerId: customer.id,
-    priceId: priceId,
-    rowKey: rowKey,
-    email: email,
-    planName: plan,
-    installFeePrice: installFeePrice || null
-  });
-
-  // Generate portal link
-  var portalUrl = '';
-  try {
-    portalUrl = createPortalSession_(customer.id);
-  } catch (portalErr) {
-    Logger.log('Portal session creation failed (non-critical): ' + portalErr.message);
+  // Geocode best-effort. Failure does not block signup - tech can geocode
+  // later via the admin Coverage view.
+  var lat = '', lon = '';
+  var geo = geocodeAddress_({ address: [address, city, state, zip].filter(Boolean).join(', ') });
+  if (geo && !geo.error) {
+    lat = geo.lat;
+    lon = geo.lon;
+  } else if (geo && geo.error) {
+    Logger.log('Lead geocode failed for ' + email + ': ' + (geo.message || geo.error));
   }
 
-  // Ensure sheet headers exist
   ensureHeaders_(TAB_LEADS, LEADS_HEADERS);
 
-  // Write lead row
+  // No Stripe customer or checkout yet. Payment is created later, when the
+  // tech marks the install complete in the admin portal (admin_complete_install).
   var leadRow = [
-    new Date(),           // Timestamp
-    fullName,             // Full Name
-    email,                // Email
-    phone,                // Phone
-    address,              // Service Address
-    city,                 // City
-    state,                // State
-    zip,                  // ZIP
-    plan,                 // Plan
-    contactPref,          // Contact Preference
-    contactMethod,        // Contact Method
-    installPref,          // Install Preference
-    notes,                // Notes
-    tosAgreed,            // TOS Agreed
-    rowKey,               // Row Key
-    customer.id,          // Stripe Customer ID
-    session.url,          // Checkout Link
-    'Checkout Sent',      // Lead Status
-    new Date()            // Created Date
+    new Date(),                // Timestamp
+    fullName,
+    email,
+    phone,
+    address,
+    city,
+    state,
+    zip,
+    plan,
+    contactPref,
+    contactMethod,
+    '',                        // Install Preference (deprecated; replaced by Requested Install Date)
+    notes,
+    tosAgreed,
+    rowKey,
+    '',                        // Stripe Customer ID (filled at install-complete)
+    '',                        // Checkout Link (filled at install-complete)
+    'Survey Requested',        // Lead Status
+    new Date(),                // Created Date
+    lat,
+    lon,
+    requestedInstallDate
   ];
 
   appendRow_(TAB_LEADS, leadRow);
 
-  // Send checkout email
-  sendCheckoutEmail_(email, fullName, session.url, portalUrl, plan);
+  // Notify the tech(s) that a new request needs a site survey.
+  try {
+    sendNewRequestTechEmail_({
+      fullName: fullName,
+      email: email,
+      phone: phone,
+      address: address,
+      city: city,
+      state: state,
+      zip: zip,
+      plan: plan,
+      requestedInstallDate: requestedInstallDate,
+      notes: notes,
+      lat: lat,
+      lon: lon,
+      coveragePrediction: String(p.coverage_prediction || '')
+    });
+  } catch (techErr) {
+    Logger.log('Tech notification email failed (non-critical): ' + techErr.message);
+  }
 
-  // Return the checkout URL as JSON.
-  // The signup page JavaScript will handle the redirect client-side.
-  // This avoids Google's sandboxed iframe which blocks external redirects.
+  // Confirmation email to the customer that we've got their request.
+  try {
+    sendRequestReceivedEmail_(email, fullName, plan, requestedInstallDate);
+  } catch (custErr) {
+    Logger.log('Customer confirmation email failed (non-critical): ' + custErr.message);
+  }
+
   return ContentService.createTextOutput(
-    JSON.stringify({ success: true, checkoutUrl: session.url })
+    JSON.stringify({ success: true, status: 'survey_requested' })
   ).setMimeType(ContentService.MimeType.JSON);
 }
 

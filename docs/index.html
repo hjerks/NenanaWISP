@@ -92,106 +92,156 @@
   <section class="signup-section" id="signup">
     <div class="signup-container">
       <h2 class="section-title">Request Service</h2>
-      <p class="section-subtitle">Fill out the form below and we'll send you a secure payment link to get started.</p>
+      <p class="section-subtitle">Fill out the form, pick an install date, and we'll be in touch. <strong>No payment is collected until your install is complete.</strong></p>
+
+      <ol class="signup-steps">
+        <li class="step-item active" data-step="1"><span class="step-num">1</span> Your Info</li>
+        <li class="step-item" data-step="2"><span class="step-num">2</span> Coverage Check</li>
+        <li class="step-item" data-step="3"><span class="step-num">3</span> Pick Install Date</li>
+      </ol>
 
       <form id="signup-form">
         <input type="hidden" name="source" value="signup_form">
+        <input type="hidden" name="requested_install_date" id="requested_install_date" value="ASAP">
+        <input type="hidden" name="coverage_prediction" id="coverage_prediction" value="">
 
-        <div class="form-grid">
+        <!-- ── Step 1: customer info ─────────────────────── -->
+        <div class="signup-step" id="step-1">
 
-          <div class="form-group">
-            <label for="full_name">Full Name <span class="required">*</span></label>
-            <input type="text" id="full_name" name="full_name" required autocomplete="name">
-            <span class="form-error" id="err-name">Please enter your full name</span>
-          </div>
+          <div class="form-grid">
 
-          <div class="form-group">
-            <label for="email">Email Address <span class="required">*</span></label>
-            <input type="email" id="email" name="email" required autocomplete="email">
-            <span class="form-error" id="err-email">Please enter a valid email address</span>
-          </div>
-
-          <div class="form-group">
-            <label for="phone">Phone Number</label>
-            <input type="tel" id="phone" name="phone" autocomplete="tel">
-          </div>
-
-          <div class="form-group">
-            <label for="plan">Service Plan <span class="required">*</span></label>
-            <select id="plan" name="plan" required>
-              <option value="">-- Select a plan --</option>
-              <option value="Residential 50/10 Mbps">Residential Basic - 50/10 Mbps</option>
-              <option value="Residential 100/20 Mbps">Residential Plus - 100/20 Mbps</option>
-              <option value="Business 100/100 Mbps">Business - 100/100 Mbps</option>
-            </select>
-            <span class="form-error" id="err-plan">Please select a plan</span>
-          </div>
-
-          <div class="form-group full-width">
-            <label for="address">Service Address <span class="required">*</span></label>
-            <input type="text" id="address" name="address" required autocomplete="street-address" placeholder="Street address where service will be installed">
-            <span class="form-error" id="err-address">Please enter your service address</span>
-          </div>
-
-          <div class="form-group">
-            <label for="city">City</label>
-            <input type="text" id="city" name="city" value="Nenana" autocomplete="address-level2">
-          </div>
-
-          <div class="form-group">
-            <label for="state">State</label>
-            <input type="text" id="state" name="state" value="AK" autocomplete="address-level1" maxlength="2">
-          </div>
-
-          <div class="form-group">
-            <label for="zip">ZIP Code</label>
-            <input type="text" id="zip" name="zip" autocomplete="postal-code" maxlength="10" placeholder="99760">
-          </div>
-
-          <div class="form-group">
-            <label for="contact_pref">Best Time to Contact</label>
-            <select id="contact_pref" name="contact_pref">
-              <option value="">No preference</option>
-              <option value="Morning">Morning</option>
-              <option value="Afternoon">Afternoon</option>
-              <option value="Evening">Evening</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="contact_method">Preferred Contact Method</label>
-            <select id="contact_method" name="contact_method">
-              <option value="Email">Email</option>
-              <option value="Phone">Phone</option>
-              <option value="Text">Text</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="install_pref">Installation Preference</label>
-            <select id="install_pref" name="install_pref">
-              <option value="Schedule visit">Schedule an installation visit</option>
-              <option value="Remote">Remote setup (if possible)</option>
-              <option value="Not sure">Not sure yet</option>
-            </select>
-          </div>
-
-          <div class="form-group full-width">
-            <label for="notes">Additional Notes</label>
-            <textarea id="notes" name="notes" placeholder="Any special instructions, questions, or details about your location..."></textarea>
-          </div>
-
-          <div class="form-group full-width">
-            <div class="tos-check">
-              <input type="checkbox" id="tos_agreed" name="tos_agreed" value="true" required>
-              <label for="tos_agreed">I agree to the <a href="tos.html" target="_blank">Terms of Service</a> and <a href="tos.html#aup" target="_blank">Acceptable Use Policy</a> <span class="required">*</span></label>
+            <div class="form-group">
+              <label for="full_name">Full Name <span class="required">*</span></label>
+              <input type="text" id="full_name" name="full_name" required autocomplete="name">
+              <span class="form-error" id="err-name">Please enter your full name</span>
             </div>
-            <span class="form-error" id="err-tos">You must agree to the Terms of Service</span>
+
+            <div class="form-group">
+              <label for="email">Email Address <span class="required">*</span></label>
+              <input type="email" id="email" name="email" required autocomplete="email">
+              <span class="form-error" id="err-email">Please enter a valid email address</span>
+            </div>
+
+            <div class="form-group">
+              <label for="phone">Phone Number</label>
+              <input type="tel" id="phone" name="phone" autocomplete="tel">
+            </div>
+
+            <div class="form-group">
+              <label for="plan">Service Plan <span class="required">*</span></label>
+              <select id="plan" name="plan" required>
+                <option value="">-- Select a plan --</option>
+                <option value="Residential 50/10 Mbps">Residential Basic - 50/10 Mbps</option>
+                <option value="Residential 100/20 Mbps">Residential Plus - 100/20 Mbps</option>
+                <option value="Business 100/100 Mbps">Business - 100/100 Mbps</option>
+              </select>
+              <span class="form-error" id="err-plan">Please select a plan</span>
+            </div>
+
+            <div class="form-group full-width">
+              <label for="address">Service Address <span class="required">*</span></label>
+              <input type="text" id="address" name="address" required autocomplete="street-address" placeholder="Street address where service will be installed">
+              <span class="form-error" id="err-address">Please enter your service address</span>
+            </div>
+
+            <div class="form-group">
+              <label for="city">City</label>
+              <input type="text" id="city" name="city" value="Nenana" autocomplete="address-level2">
+            </div>
+
+            <div class="form-group">
+              <label for="state">State</label>
+              <input type="text" id="state" name="state" value="AK" autocomplete="address-level1" maxlength="2">
+            </div>
+
+            <div class="form-group">
+              <label for="zip">ZIP Code</label>
+              <input type="text" id="zip" name="zip" autocomplete="postal-code" maxlength="10" placeholder="99760">
+            </div>
+
+            <div class="form-group">
+              <label for="contact_pref">Best Time to Contact</label>
+              <select id="contact_pref" name="contact_pref">
+                <option value="">No preference</option>
+                <option value="Morning">Morning</option>
+                <option value="Afternoon">Afternoon</option>
+                <option value="Evening">Evening</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="contact_method">Preferred Contact Method</label>
+              <select id="contact_method" name="contact_method">
+                <option value="Email">Email</option>
+                <option value="Phone">Phone</option>
+                <option value="Text">Text</option>
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label for="notes">Additional Notes</label>
+              <textarea id="notes" name="notes" placeholder="Any special instructions, questions, or details about your location..."></textarea>
+            </div>
+
+            <div class="form-group full-width">
+              <div class="tos-check">
+                <input type="checkbox" id="tos_agreed" name="tos_agreed" value="true" required>
+                <label for="tos_agreed">I agree to the <a href="tos.html" target="_blank">Terms of Service</a> and <a href="tos.html#aup" target="_blank">Acceptable Use Policy</a> <span class="required">*</span></label>
+              </div>
+              <span class="form-error" id="err-tos">You must agree to the Terms of Service</span>
+            </div>
+
           </div>
 
+          <button type="button" class="submit-btn" id="step1-next-btn">Next: Check Coverage &rarr;</button>
         </div>
 
-        <button type="submit" class="submit-btn" id="submit-btn">Request Service</button>
+        <!-- ── Step 2: coverage check ────────────────────── -->
+        <div class="signup-step" id="step-2" style="display:none;">
+          <div id="coverage-result" class="coverage-result loading">
+            <p>Looking up your address and checking coverage&hellip;</p>
+          </div>
+          <p class="coverage-disclaimer">
+            <strong>Heads up:</strong> this prediction uses a coverage map of Nenana but
+            doesn't account for trees, buildings, or terrain right at your home.
+            Final coverage depends on a site survey our tech does in person, so
+            even a "no signal" prediction here doesn't necessarily mean we can't serve you.
+          </p>
+          <div class="step-actions">
+            <button type="button" class="btn-secondary" id="step2-back-btn">&larr; Back</button>
+            <button type="button" class="submit-btn" id="step2-next-btn">Next: Pick Install Date &rarr;</button>
+          </div>
+        </div>
+
+        <!-- ── Step 3: install date picker ───────────────── -->
+        <div class="signup-step" id="step-3" style="display:none;">
+          <div class="date-picker">
+            <p>When would you like us to come install your equipment?</p>
+            <div class="date-options">
+              <label class="date-radio">
+                <input type="radio" name="install_date_choice" value="ASAP" checked>
+                <span><strong>ASAP</strong> &mdash; we'll propose a date</span>
+              </label>
+              <label class="date-radio">
+                <input type="radio" name="install_date_choice" value="specific">
+                <span>Pick a specific date</span>
+              </label>
+            </div>
+            <div class="date-input-row" id="date-input-row" style="display:none;">
+              <label for="install_date">Preferred date (weekdays only, 2-14 days from now):</label>
+              <input type="date" id="install_date">
+              <span class="form-error" id="err-date">Pick a weekday between 2 and 14 days from today.</span>
+            </div>
+          </div>
+          <div class="step-actions">
+            <button type="button" class="btn-secondary" id="step3-back-btn">&larr; Back</button>
+            <button type="submit" class="submit-btn" id="submit-btn">Submit Request</button>
+          </div>
+          <p class="coverage-disclaimer" style="margin-top:16px;">
+            Our network tech will review your request, confirm a date (or propose a different one),
+            and reach out about a site survey if needed. <strong>You won't be charged anything until your install is complete.</strong>
+          </p>
+        </div>
 
         <div class="form-message" id="form-message"></div>
       </form>

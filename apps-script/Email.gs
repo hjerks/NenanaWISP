@@ -317,3 +317,173 @@ function sendReactivationEmail_(email, name) {
     replyTo: propOr('CONTACT_EMAIL', '')
   });
 }
+
+// ── Survey / Install Workflow Emails ───────────────────────
+
+/**
+ * Notify the network tech(s) that a new service request needs a site survey.
+ * Recipients come from NETWORK_TECH_EMAILS (comma-separated) script property.
+ */
+function sendNewRequestTechEmail_(req) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var techEmails = propOr('NETWORK_TECH_EMAILS', '').split(',')
+    .map(function(s) { return s.trim(); }).filter(Boolean);
+  if (!techEmails.length) {
+    Logger.log('NETWORK_TECH_EMAILS not configured; skipping tech notification');
+    return;
+  }
+
+  var fullAddress = [req.address, req.city, req.state, req.zip].filter(Boolean).join(', ');
+  var mapsUrl = req.lat && req.lon
+    ? 'https://www.google.com/maps?q=' + req.lat + ',' + req.lon
+    : 'https://www.google.com/maps/search/' + encodeURIComponent(fullAddress);
+
+  var rows = [
+    ['Customer', req.fullName],
+    ['Email', req.email],
+    ['Phone', req.phone || '(not provided)'],
+    ['Plan', req.plan],
+    ['Address', fullAddress],
+    ['Coordinates', (req.lat && req.lon) ? (req.lat + ', ' + req.lon) : '(geocode failed)'],
+    ['Requested install date', req.requestedInstallDate || 'ASAP'],
+    ['Coverage prediction', req.coveragePrediction || '(not provided)'],
+    ['Notes', req.notes || '(none)']
+  ];
+  var rowsHtml = rows.map(function(r) {
+    return '<tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">' + sanitize_(r[0]) +
+           '</td><td style="padding:6px 12px;color:#1f2937;font-size:14px;"><strong>' + sanitize_(r[1]) +
+           '</strong></td></tr>';
+  }).join('');
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#1a5276;">New Service Request</h2>' +
+    '<p style="color:#374151;line-height:1.6;">A new request needs a site survey.</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:6px;overflow:hidden;">' +
+    rowsHtml +
+    '</table>' +
+    emailButton_('View Location on Google Maps', mapsUrl) +
+    '<p style="color:#6b7280;font-size:13px;">Open the admin portal to approve the survey, propose a different install date, ' +
+    'or mark as Cannot Install.</p>';
+
+  MailApp.sendEmail({
+    to: techEmails.join(','),
+    subject: '[Survey Needed] ' + req.fullName + ' - ' + (req.address || 'no address'),
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: req.email
+  });
+}
+
+/**
+ * Confirmation to the customer that we received their request.
+ */
+function sendRequestReceivedEmail_(email, name, planName, requestedDate) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var firstName = name.split(' ')[0];
+  var dateLine = requestedDate === 'ASAP'
+    ? 'as soon as possible'
+    : 'on or around ' + sanitize_(requestedDate);
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#1a5276;">We Got Your Request</h2>' +
+    '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+    '<p style="color:#374151;line-height:1.6;">Thanks for requesting service with ' + sanitize_(fromName) + '. ' +
+    'You picked the <strong>' + sanitize_(planName) + '</strong> plan and asked for installation ' + dateLine + '.</p>' +
+    '<p style="color:#374151;line-height:1.6;">Our network tech will review the request, do a quick coverage check, ' +
+    'and reach out within a day or two to confirm a date or let you know if we need to do a site survey first.</p>' +
+    '<p style="color:#374151;line-height:1.6;"><strong>You won\'t be charged anything yet.</strong> ' +
+    'Payment isn\'t collected until your install is complete.</p>' +
+    '<p style="color:#6b7280;font-size:13px;margin-top:20px;">Questions? Just reply to this email.</p>';
+
+  MailApp.sendEmail({
+    to: email,
+    subject: fromName + ': we got your request',
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: propOr('CONTACT_EMAIL', '')
+  });
+}
+
+/**
+ * Notify the customer that the tech has approved their survey.
+ */
+function sendSurveyApprovedEmail_(email, name, planName, scheduledDate, message) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var firstName = name.split(' ')[0];
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#16a34a;">Install Date Confirmed</h2>' +
+    '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+    '<p style="color:#374151;line-height:1.6;">Good news - your service request for the ' +
+    '<strong>' + sanitize_(planName) + '</strong> plan has been approved.</p>' +
+    '<div style="background-color:#f0fdf4;border-left:4px solid #16a34a;padding:16px;margin:20px 0;border-radius:0 6px 6px 0;">' +
+    '<p style="margin:0;color:#166534;font-size:15px;"><strong>Install scheduled for: ' + sanitize_(scheduledDate) + '</strong></p>' +
+    '</div>' +
+    (message ? '<p style="color:#374151;line-height:1.6;">' + sanitize_(message) + '</p>' : '') +
+    '<p style="color:#374151;line-height:1.6;">No payment is needed yet - we\'ll send you a payment link once the install is complete.</p>' +
+    '<p style="color:#6b7280;font-size:13px;margin-top:20px;">Need to reschedule? Just reply to this email.</p>';
+
+  MailApp.sendEmail({
+    to: email,
+    subject: fromName + ': install scheduled for ' + scheduledDate,
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: propOr('CONTACT_EMAIL', '')
+  });
+}
+
+/**
+ * Notify the customer that we cannot install at their location.
+ */
+function sendSurveyRejectedEmail_(email, name, message) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var firstName = name.split(' ')[0];
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#1a5276;">About Your Service Request</h2>' +
+    '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+    '<p style="color:#374151;line-height:1.6;">Thanks for reaching out to ' + sanitize_(fromName) + '. ' +
+    'Unfortunately, after reviewing your location, we don\'t think we can deliver a reliable signal there right now.</p>' +
+    (message
+      ? '<div style="background-color:#fef3c7;border-left:4px solid #f59e0b;padding:16px;margin:20px 0;border-radius:0 6px 6px 0;">' +
+        '<p style="margin:0;color:#92400e;">' + sanitize_(message) + '</p></div>'
+      : '') +
+    '<p style="color:#374151;line-height:1.6;">We\'ll keep your information on file. As we add more towers and capacity, ' +
+    'we\'ll reach back out if your location becomes serviceable.</p>' +
+    '<p style="color:#6b7280;font-size:13px;margin-top:20px;">Questions or want a second look? Reply to this email.</p>';
+
+  MailApp.sendEmail({
+    to: email,
+    subject: fromName + ': about your service request',
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: propOr('CONTACT_EMAIL', '')
+  });
+}
+
+/**
+ * Notify the customer that the install is complete and payment is now due.
+ */
+function sendInstallCompleteEmail_(email, name, planName, checkoutUrl) {
+  var fromName = propOr('FROM_NAME', 'NNA Community Broadband');
+  var firstName = name.split(' ')[0];
+
+  var body =
+    '<h2 style="margin:0 0 16px;color:#16a34a;">You\'re Online!</h2>' +
+    '<p style="color:#374151;line-height:1.6;">Hi ' + sanitize_(firstName) + ',</p>' +
+    '<p style="color:#374151;line-height:1.6;">Your ' + sanitize_(fromName) + ' install is complete and your ' +
+    '<strong>' + sanitize_(planName) + '</strong> service is live.</p>' +
+    '<p style="color:#374151;line-height:1.6;">To activate billing and keep service running, please complete payment using the button below. ' +
+    'If you\'d rather pay in person with the tech, just let us know.</p>' +
+    emailButton_('Complete Payment', checkoutUrl) +
+    '<p style="color:#6b7280;font-size:13px;">Payment must be completed within 7 days to avoid service interruption.</p>' +
+    '<p style="color:#6b7280;font-size:13px;margin-top:20px;">Welcome aboard!</p>';
+
+  MailApp.sendEmail({
+    to: email,
+    subject: fromName + ': install complete - please complete payment',
+    htmlBody: buildEmailHtml_(body),
+    name: fromName,
+    replyTo: propOr('CONTACT_EMAIL', '')
+  });
+}

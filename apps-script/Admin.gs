@@ -328,6 +328,15 @@ function handleAdminRequest_(e) {
     case 'admin_save_coords':
       result = adminSaveCoords_(e.parameter);
       break;
+    case 'admin_approve_survey':
+      result = adminApproveSurvey_(e.parameter);
+      break;
+    case 'admin_reject_survey':
+      result = adminRejectSurvey_(e.parameter);
+      break;
+    case 'admin_complete_install':
+      result = adminCompleteInstall_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -379,7 +388,11 @@ function getAdminDashboard_() {
   }
 
   var pendingLeads = leads.filter(function(l) {
-    return l['Lead Status'] === 'Checkout Sent';
+    var s = l['Lead Status'];
+    // Counts any lead that still needs tech action (new flow) or is awaiting
+    // the legacy payment path.
+    return s === 'Survey Requested' || s === 'Survey Approved' ||
+           s === 'Awaiting Payment' || s === 'Checkout Sent';
   }).length;
 
   var pendingInstalls = installs.filter(function(inst) {
@@ -1609,25 +1622,27 @@ function adminReaderPaymentStatus_(params) {
 //   admin_save_coords   - write {lat, lon} into a Lead/Install/Customer row
 //                         so we don't geocode the same address twice.
 
-function adminGeocode_(params) {
+/**
+ * Geocode an address (or reverse-geocode a lat/lon) via Google Geocoding.
+ * Returns { lat, lon, formatted_address, location_type } on success, or
+ * { error: ... } on failure. Used by both the admin and public endpoints.
+ */
+function geocodeAddress_(opts) {
   var apiKey = propOr('GOOGLE_GEOCODING_API_KEY', '');
   if (!apiKey) {
     return { error: 'no_key', message: 'GOOGLE_GEOCODING_API_KEY not set in Script Properties' };
   }
 
-  var reverse = String(params.reverse || '') === '1';
   var url;
-  if (reverse) {
-    var lat = parseFloat(params.lat);
-    var lon = parseFloat(params.lon);
-    if (!isFinite(lat) || !isFinite(lon)) return { error: 'bad_coords' };
+  if (opts.reverse) {
+    if (!isFinite(opts.lat) || !isFinite(opts.lon)) return { error: 'bad_coords' };
     url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng='
-      + encodeURIComponent(lat + ',' + lon)
+      + encodeURIComponent(opts.lat + ',' + opts.lon)
       + '&key=' + encodeURIComponent(apiKey);
   } else {
-    var address = String(params.address || '').trim();
+    var address = String(opts.address || '').trim();
     if (!address) return { error: 'missing_address' };
-    // Scope results to Alaska to avoid "100 Main St" matching some other state.
+    // Scope to Alaska so "100 Main St" doesn't match a different state.
     url = 'https://maps.googleapis.com/maps/api/geocode/json?address='
       + encodeURIComponent(address)
       + '&components=administrative_area:AK|country:US'
@@ -1648,8 +1663,138 @@ function adminGeocode_(params) {
       location_type: r.geometry.location_type
     };
   } catch (e) {
-    Logger.log('adminGeocode error: ' + e.message);
+    Logger.log('geocodeAddress error: ' + e.message);
     return { error: 'fetch_failed', message: e.message };
+  }
+}
+
+function adminGeocode_(params) {
+  return geocodeAddress_({
+    address: params.address,
+    reverse: String(params.reverse || '') === '1',
+    lat: parseFloat(params.lat),
+    lon: parseFloat(params.lon)
+  });
+}
+
+// ── Survey / Install Workflow ──────────────────────────────
+
+/**
+ * Tech approves the survey. Sets the lead's status to "Survey Approved",
+ * stores the confirmed install date (overwriting the customer's request if
+ * different), and emails the customer.
+ *
+ * Params:
+ *   row_num            - lead row number
+ *   scheduled_date     - 'YYYY-MM-DD' the tech has confirmed
+ *   message            - optional note to include in the customer email
+ */
+function adminApproveSurvey_(params) {
+  var rowNum = parseInt(params.row_num, 10);
+  if (!rowNum) return { error: 'missing_row_num' };
+  var scheduledDate = String(params.scheduled_date || '').trim();
+  if (!scheduledDate) return { error: 'missing_scheduled_date' };
+
+  var sheet = getSheet_(TAB_LEADS);
+  var lead = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+  var email = String(lead[L.EMAIL - 1] || '').trim();
+  var name = String(lead[L.FULL_NAME - 1] || '').trim();
+  var plan = String(lead[L.PLAN - 1] || '').trim();
+  if (!email) return { error: 'lead_missing_email' };
+
+  sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Survey Approved');
+  sheet.getRange(rowNum, L.REQUESTED_INSTALL_DATE).setValue(scheduledDate);
+
+  try {
+    sendSurveyApprovedEmail_(email, name, plan, scheduledDate, String(params.message || ''));
+  } catch (err) {
+    Logger.log('sendSurveyApprovedEmail failed: ' + err.message);
+  }
+  return { ok: true, status: 'Survey Approved', scheduled_date: scheduledDate };
+}
+
+/**
+ * Tech determines the location is not serviceable.
+ *
+ * Params:
+ *   row_num
+ *   message    - optional note explaining (e.g. "no clear LOS to tower")
+ */
+function adminRejectSurvey_(params) {
+  var rowNum = parseInt(params.row_num, 10);
+  if (!rowNum) return { error: 'missing_row_num' };
+
+  var sheet = getSheet_(TAB_LEADS);
+  var lead = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+  var email = String(lead[L.EMAIL - 1] || '').trim();
+  var name = String(lead[L.FULL_NAME - 1] || '').trim();
+  if (!email) return { error: 'lead_missing_email' };
+
+  sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Cannot Install');
+
+  try {
+    sendSurveyRejectedEmail_(email, name, String(params.message || ''));
+  } catch (err) {
+    Logger.log('sendSurveyRejectedEmail failed: ' + err.message);
+  }
+  return { ok: true, status: 'Cannot Install' };
+}
+
+/**
+ * Tech marks install complete. This is the moment we create the Stripe
+ * customer + checkout session and send the customer their payment link.
+ * Status flips to "Awaiting Payment". The 7-day pay window starts now.
+ *
+ * Params:
+ *   row_num
+ */
+function adminCompleteInstall_(params) {
+  var rowNum = parseInt(params.row_num, 10);
+  if (!rowNum) return { error: 'missing_row_num' };
+
+  var sheet = getSheet_(TAB_LEADS);
+  var lead = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+  var email = String(lead[L.EMAIL - 1] || '').trim();
+  var name = String(lead[L.FULL_NAME - 1] || '').trim();
+  var phone = String(lead[L.PHONE - 1] || '').trim();
+  var address = String(lead[L.ADDRESS - 1] || '').trim();
+  var city = String(lead[L.CITY - 1] || '').trim();
+  var state = String(lead[L.STATE - 1] || '').trim();
+  var zip = String(lead[L.ZIP - 1] || '').trim();
+  var plan = String(lead[L.PLAN - 1] || '').trim();
+  var rowKey = String(lead[L.ROW_KEY - 1] || '').trim();
+  if (!email || !plan || !rowKey) {
+    return { error: 'lead_incomplete', message: 'lead is missing email/plan/row_key' };
+  }
+
+  try {
+    var customer = createOrGetStripeCustomer_({
+      email: email,
+      name: name,
+      phone: phone,
+      address: { line1: address, city: city, state: state, zip: zip }
+    });
+    var priceId = getPriceIdForPlan_(plan);
+    var installFeePrice = propOr('INSTALL_FEE_PRICE', '');
+    var session = createCheckoutSession_({
+      customerId: customer.id,
+      priceId: priceId,
+      rowKey: rowKey,
+      email: email,
+      planName: plan,
+      installFeePrice: installFeePrice || null
+    });
+
+    sheet.getRange(rowNum, L.STRIPE_CUST_ID).setValue(customer.id);
+    sheet.getRange(rowNum, L.CHECKOUT_LINK).setValue(session.url);
+    sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Awaiting Payment');
+
+    sendInstallCompleteEmail_(email, name, plan, session.url);
+
+    return { ok: true, status: 'Awaiting Payment', checkout_url: session.url };
+  } catch (err) {
+    Logger.log('adminCompleteInstall error: ' + err.message + '\n' + err.stack);
+    return { error: 'stripe_error', message: err.message };
   }
 }
 

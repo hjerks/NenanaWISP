@@ -34,7 +34,8 @@ var L = {
   LEAD_STATUS:  18,
   CREATED_DATE: 19,
   LATITUDE:     20,
-  LONGITUDE:    21
+  LONGITUDE:    21,
+  REQUESTED_INSTALL_DATE: 22  // 'YYYY-MM-DD' or 'ASAP'
 };
 
 // ── Column Indexes (1-based) for Customers tab ─────────────
@@ -64,7 +65,7 @@ var LEADS_HEADERS = [
   'City', 'State', 'ZIP', 'Plan', 'Contact Preference',
   'Contact Method', 'Install Preference', 'Notes', 'TOS Agreed',
   'Row Key', 'Stripe Customer ID', 'Checkout Link', 'Lead Status', 'Created Date',
-  'Latitude', 'Longitude'
+  'Latitude', 'Longitude', 'Requested Install Date'
 ];
 
 var CUSTOMERS_HEADERS = [
