@@ -1008,7 +1008,7 @@ function loadLeads(container) {
         html += '<td><strong>' + esc(l['Full Name']) + '</strong><br><small style="color:#6b7280;">' + esc(l['Email']) + '</small></td>';
         html += '<td>' + esc(l['Service Address'] || '') + '</td>';
         html += '<td>' + esc(l['Plan']) + '</td>';
-        html += '<td>' + esc(l['Requested Install Date'] || '') + '</td>';
+        html += '<td>' + formatRequestedInstall(l['Requested Install Date']) + '</td>';
         html += '<td>' + badge(status) + '</td>';
         html += '<td><div class="btn-group">';
         html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + JSON.stringify(l) + ')\'>Edit</button>';
@@ -1525,6 +1525,22 @@ function badge(status) {
   if (!status) return '<span class="badge">--</span>';
   var cls = String(status).toLowerCase().replace(/[\s_]/g, '-');
   return '<span class="badge badge-' + cls + '">' + esc(status) + '</span>';
+}
+
+function formatRequestedInstall(val) {
+  if (!val) return '<span style="color:#9ca3af;">--</span>';
+  var s = String(val).trim();
+  if (s.toUpperCase() === 'ASAP') {
+    return '<span class="badge badge-pending" style="font-weight:600;">ASAP</span>';
+  }
+  // Parse ISO-ish dates. new Date('YYYY-MM-DD') is UTC; to avoid a TZ shift
+  // that prints the day before in Alaska, use the YMD slice directly when
+  // we recognize it, else fall back to whatever the Date parser returns.
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  var d = m ? new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10))
+            : new Date(s);
+  if (isNaN(d.getTime())) return esc(s);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatDate(val) {
