@@ -322,6 +322,12 @@ function handleAdminRequest_(e) {
     case 'admin_reader_finalize_product_charge':
       result = adminReaderFinalizeProductCharge_(e.parameter);
       break;
+    case 'admin_geocode':
+      result = adminGeocode_(e.parameter);
+      break;
+    case 'admin_save_coords':
+      result = adminSaveCoords_(e.parameter);
+      break;
     default:
       result = { error: 'unknown_action', message: 'Unknown admin action: ' + action };
   }
@@ -1591,4 +1597,113 @@ function adminReaderPaymentStatus_(params) {
     Logger.log('adminReaderPaymentStatus error: ' + e.message);
     return { error: 'stripe_error', message: e.message };
   }
+}
+
+// ── Geocoding ──────────────────────────────────────────────
+//
+// Two endpoints:
+//   admin_geocode       - one-off address -> {lat, lon}. No sheet write.
+//                         Used by the coverage page's "enter an address" box
+//                         and by the click-to-check tool (reverse direction,
+//                         with `reverse=1`).
+//   admin_save_coords   - write {lat, lon} into a Lead/Install/Customer row
+//                         so we don't geocode the same address twice.
+
+function adminGeocode_(params) {
+  var apiKey = propOr('GOOGLE_GEOCODING_API_KEY', '');
+  if (!apiKey) {
+    return { error: 'no_key', message: 'GOOGLE_GEOCODING_API_KEY not set in Script Properties' };
+  }
+
+  var reverse = String(params.reverse || '') === '1';
+  var url;
+  if (reverse) {
+    var lat = parseFloat(params.lat);
+    var lon = parseFloat(params.lon);
+    if (!isFinite(lat) || !isFinite(lon)) return { error: 'bad_coords' };
+    url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng='
+      + encodeURIComponent(lat + ',' + lon)
+      + '&key=' + encodeURIComponent(apiKey);
+  } else {
+    var address = String(params.address || '').trim();
+    if (!address) return { error: 'missing_address' };
+    // Scope results to Alaska to avoid "100 Main St" matching some other state.
+    url = 'https://maps.googleapis.com/maps/api/geocode/json?address='
+      + encodeURIComponent(address)
+      + '&components=administrative_area:AK|country:US'
+      + '&key=' + encodeURIComponent(apiKey);
+  }
+
+  try {
+    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var data = JSON.parse(resp.getContentText());
+    if (data.status !== 'OK' || !data.results || !data.results.length) {
+      return { error: 'no_result', status: data.status, message: data.error_message || '' };
+    }
+    var r = data.results[0];
+    return {
+      lat: r.geometry.location.lat,
+      lon: r.geometry.location.lng,
+      formatted_address: r.formatted_address,
+      location_type: r.geometry.location_type
+    };
+  } catch (e) {
+    Logger.log('adminGeocode error: ' + e.message);
+    return { error: 'fetch_failed', message: e.message };
+  }
+}
+
+/**
+ * Write lat/lon back into a single row on Leads, Installs, or Customers.
+ * Row identification:
+ *   - Leads / Customers: by Row Key
+ *   - Installs: by Customer Name + Service Address (no row key column)
+ */
+function adminSaveCoords_(params) {
+  var tab = String(params.tab || '');
+  var lat = parseFloat(params.lat);
+  var lon = parseFloat(params.lon);
+  if (!isFinite(lat) || !isFinite(lon)) return { error: 'bad_coords' };
+
+  var sheet, rowNum, headers;
+  if (tab === TAB_LEADS) {
+    var rowKey = String(params.row_key || '');
+    if (!rowKey) return { error: 'missing_row_key' };
+    rowNum = findRow_(TAB_LEADS, L.ROW_KEY, rowKey);
+    sheet = getSheet_(TAB_LEADS);
+    headers = LEADS_HEADERS;
+  } else if (tab === TAB_CUSTOMERS) {
+    var rowKey2 = String(params.row_key || '');
+    if (!rowKey2) return { error: 'missing_row_key' };
+    rowNum = findRow_(TAB_CUSTOMERS, C_.ROW_KEY, rowKey2);
+    sheet = getSheet_(TAB_CUSTOMERS);
+    headers = CUSTOMERS_HEADERS;
+  } else if (tab === TAB_INSTALLS) {
+    var name = String(params.customer_name || '');
+    var addr = String(params.address || '');
+    if (!name || !addr) return { error: 'missing_install_keys' };
+    sheet = getSheet_(TAB_INSTALLS);
+    headers = INSTALLS_HEADERS;
+    var last = sheet.getLastRow();
+    if (last < 2) return { error: 'not_found' };
+    var data = sheet.getRange(2, 1, last - 1, headers.length).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]) === name && String(data[i][2]) === addr) {
+        rowNum = i + 2;
+        break;
+      }
+    }
+  } else {
+    return { error: 'bad_tab' };
+  }
+  if (!rowNum) return { error: 'not_found' };
+
+  var latCol = headers.indexOf('Latitude') + 1;
+  var lonCol = headers.indexOf('Longitude') + 1;
+  if (!latCol || !lonCol) {
+    return { error: 'schema', message: 'Lat/Lon columns not present. Run initializeAllSheets()' };
+  }
+  sheet.getRange(rowNum, latCol).setValue(lat);
+  sheet.getRange(rowNum, lonCol).setValue(lon);
+  return { ok: true, row: rowNum, lat: lat, lon: lon };
 }

@@ -413,6 +413,10 @@ function loadView(view) {
       title.textContent = 'Quick Charge';
       loadQuickCharge(content);
       break;
+    case 'coverage':
+      title.textContent = 'Coverage Check';
+      loadCoverage(content);
+      break;
     default:
       content.innerHTML = '<div class="empty-state"><p>Unknown view</p></div>';
   }
@@ -2464,4 +2468,248 @@ function closeReaderModal() {
   if (_readerPollTimeout) { clearTimeout(_readerPollTimeout); _readerPollTimeout = null; }
   var overlay = document.getElementById('reader-modal-overlay');
   if (overlay) overlay.remove();
+}
+
+// ── Coverage Check View ────────────────────────────────────
+
+var _coverage = {
+  map: null,          // L.Map
+  overlay: null,      // L.ImageOverlay
+  towerMarker: null,
+  checkMarker: null,
+  data: null,         // nenana_coverage.json
+  bounds: null        // L.LatLngBounds
+};
+
+function loadCoverage(container) {
+  container.innerHTML =
+    '<div class="panel coverage-panel">' +
+    '  <div class="panel-header"><h2>Coverage Check</h2></div>' +
+    '  <div class="coverage-body">' +
+    '    <div id="coverage-map"></div>' +
+    '    <div class="coverage-side">' +
+    '      <div class="coverage-controls">' +
+    '        <label class="coverage-toggle">' +
+    '          <input type="checkbox" id="cov-overlay-toggle" checked> Heatmap overlay' +
+    '        </label>' +
+    '        <input type="text" id="cov-address-input" placeholder="Enter an address (e.g. 2nd & C, Nenana)"' +
+    '               autocomplete="off">' +
+    '        <button class="btn btn-sm btn-primary" id="cov-check-btn">Check</button>' +
+    '      </div>' +
+    '      <div class="coverage-hint">' +
+    '        <strong>Tip:</strong> click anywhere on the map to check that exact spot.' +
+    '      </div>' +
+    '      <div id="cov-result"></div>' +
+    '    </div>' +
+    '  </div>' +
+    '</div>';
+
+  if (typeof L === 'undefined') {
+    // Leaflet JS uses `defer` so on a cold load it may not be parsed yet.
+    setTimeout(function() { loadCoverage(container); }, 100);
+    return;
+  }
+
+  // Fetch the grid JSON alongside initializing the map so both are ready together.
+  fetch('../coverage/nenana_coverage.json', { cache: 'no-cache' })
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      _coverage.data = data;
+      initCoverageMap(data);
+      wireCoverageControls();
+    })
+    .catch(function(err) {
+      var box = document.getElementById('cov-result');
+      if (box) {
+        box.innerHTML =
+          '<div class="cov-error">Could not load coverage data: ' + esc(err.message) +
+          '<br><small>Run <code>python tools/build_coverage.py</code> to generate it.</small></div>';
+      }
+    });
+}
+
+function initCoverageMap(data) {
+  var sw = data.bounds[0], ne = data.bounds[1];
+  var bounds = L.latLngBounds([sw[0], sw[1]], [ne[0], ne[1]]);
+  _coverage.bounds = bounds;
+
+  var tower = (data.towers && data.towers[0]) || null;
+  var center = tower ? [tower.lat, tower.lon] : bounds.getCenter();
+
+  var map = L.map('coverage-map', { zoomControl: true }).setView(center, 14);
+  _coverage.map = map;
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  _coverage.overlay = L.imageOverlay('../coverage/nenana_coverage.png', bounds, {
+    opacity: 0.6
+  }).addTo(map);
+
+  // Tower marker
+  if (tower) {
+    _coverage.towerMarker = L.marker([tower.lat, tower.lon], {
+      title: tower.id,
+      icon: L.divIcon({
+        className: 'cov-tower-icon',
+        html: '<div class="cov-tower-dot"></div>',
+        iconSize: [16, 16]
+      })
+    }).bindPopup('<strong>' + esc(tower.id) + '</strong><br>' +
+                 esc(tower.frequency_mhz + ' MHz')).addTo(map);
+  }
+
+  map.on('click', function(e) {
+    runCoverageCheck(e.latlng.lat, e.latlng.lng, '(map click)');
+  });
+}
+
+function wireCoverageControls() {
+  var toggle = document.getElementById('cov-overlay-toggle');
+  if (toggle) {
+    toggle.addEventListener('change', function() {
+      if (!_coverage.map || !_coverage.overlay) return;
+      if (toggle.checked) _coverage.overlay.addTo(_coverage.map);
+      else _coverage.map.removeLayer(_coverage.overlay);
+    });
+  }
+
+  var btn = document.getElementById('cov-check-btn');
+  var input = document.getElementById('cov-address-input');
+  if (btn) btn.addEventListener('click', submitCoverageAddress);
+  if (input) {
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); submitCoverageAddress(); }
+    });
+  }
+}
+
+function submitCoverageAddress() {
+  var input = document.getElementById('cov-address-input');
+  if (!input) return;
+  var addr = (input.value || '').trim();
+  if (!addr) return;
+
+  setCoverageResult('<div class="loading-inline">Geocoding...</div>');
+
+  apiCall('admin_geocode', { address: addr }, function(err, data) {
+    if (err || !data) {
+      setCoverageResult('<div class="cov-error">Geocoding failed. Check that GOOGLE_GEOCODING_API_KEY is set in Apps Script Properties.</div>');
+      return;
+    }
+    if (data.error) {
+      var msg = data.error === 'no_key'
+        ? 'Google API key not configured. Add GOOGLE_GEOCODING_API_KEY in Apps Script &rarr; Project Settings &rarr; Script Properties.'
+        : 'Could not find that address. (' + esc(data.status || data.error) + ')';
+      setCoverageResult('<div class="cov-error">' + msg + '</div>');
+      return;
+    }
+    runCoverageCheck(data.lat, data.lon, data.formatted_address || addr);
+  });
+}
+
+function runCoverageCheck(lat, lon, label) {
+  var cov = _coverage.data;
+  if (!cov) return;
+
+  if (_coverage.checkMarker) _coverage.map.removeLayer(_coverage.checkMarker);
+  _coverage.checkMarker = L.marker([lat, lon]).addTo(_coverage.map)
+    .bindPopup(esc(label)).openPopup();
+  _coverage.map.setView([lat, lon], Math.max(_coverage.map.getZoom(), 15));
+
+  // Snap to nearest grid cell
+  var sw = cov.bounds[0], ne = cov.bounds[1];
+  var rows = cov.rows, cols = cov.cols;
+  var ri = Math.round((ne[0] - lat) / (ne[0] - sw[0]) * (rows - 1));
+  var ci = Math.round((lon - sw[1]) / (ne[1] - sw[1]) * (cols - 1));
+  var inGrid = (ri >= 0 && ri < rows && ci >= 0 && ci < cols);
+  var rssi = inGrid ? cov.rssi_dbm[ri][ci] : null;
+
+  // Distance + bearing to primary tower
+  var tower = cov.towers && cov.towers[0];
+  var dist_m = null, bearing = null, offAxis = null;
+  if (tower) {
+    dist_m = haversine(tower.lat, tower.lon, lat, lon);
+    bearing = bearingDeg(tower.lat, tower.lon, lat, lon);
+    var sectorAz = tower.sectors && tower.sectors[0] && tower.sectors[0].azimuth_deg;
+    if (sectorAz != null) {
+      offAxis = Math.abs(((bearing - sectorAz + 180 + 360) % 360) - 180);
+    }
+  }
+
+  var badge = classifyRssiBadge(rssi, cov.thresholds);
+  var los = rssiLosGuess(rssi, cov.thresholds);
+
+  var html = '';
+  html += '<div class="cov-result">';
+  html += '  <div class="cov-badge cov-badge-' + badge.cls + '">' + badge.label + '</div>';
+  html += '  <div class="cov-addr">' + esc(label) + '</div>';
+  html += '  <dl class="cov-stats">';
+  if (rssi != null) {
+    html += '<dt>Predicted RSSI</dt><dd>' + rssi.toFixed(1) + ' dBm</dd>';
+  } else {
+    html += '<dt>Predicted RSSI</dt><dd>(outside modeled area)</dd>';
+  }
+  if (dist_m != null) {
+    html += '<dt>Distance to tower</dt><dd>' + formatMeters(dist_m) + '</dd>';
+    html += '<dt>Bearing from tower</dt><dd>' + bearing.toFixed(0) + '&deg; true</dd>';
+    if (offAxis != null) {
+      html += '<dt>Off-axis from sector</dt><dd>' + offAxis.toFixed(0) + '&deg;</dd>';
+    }
+  }
+  html += '<dt>Likely LOS</dt><dd>' + los + '</dd>';
+  html += '  </dl>';
+  html += '  <div class="cov-coords"><small>' + lat.toFixed(6) + ', ' + lon.toFixed(6) + '</small></div>';
+  html += '</div>';
+  setCoverageResult(html);
+}
+
+function classifyRssiBadge(rssi, thresholds) {
+  if (rssi == null) return { cls: 'none', label: 'No data' };
+  if (rssi >= thresholds.good_min_dbm) return { cls: 'good', label: 'Good signal' };
+  if (rssi >= thresholds.marginal_min_dbm) return { cls: 'marginal', label: 'Marginal' };
+  return { cls: 'bad', label: 'Likely no signal' };
+}
+
+function rssiLosGuess(rssi, thresholds) {
+  if (rssi == null) return 'unknown';
+  if (rssi >= thresholds.good_min_dbm) return 'yes (strong signal)';
+  if (rssi >= thresholds.marginal_min_dbm) return 'partial / clutter';
+  return 'no / blocked';
+}
+
+function setCoverageResult(html) {
+  var box = document.getElementById('cov-result');
+  if (box) box.innerHTML = html;
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  var R = 6371000;
+  var toRad = function(d) { return d * Math.PI / 180; };
+  var dLat = toRad(lat2 - lat1);
+  var dLon = toRad(lon2 - lon1);
+  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+          Math.sin(dLon/2) * Math.sin(dLon/2);
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  var toRad = function(d) { return d * Math.PI / 180; };
+  var toDeg = function(r) { return r * 180 / Math.PI; };
+  var p1 = toRad(lat1), p2 = toRad(lat2);
+  var dl = toRad(lon2 - lon1);
+  var x = Math.sin(dl) * Math.cos(p2);
+  var y = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (toDeg(Math.atan2(x, y)) + 360) % 360;
+}
+
+function formatMeters(m) {
+  if (m >= 1000) return (m / 1000).toFixed(2) + ' km (' + (m / 1609).toFixed(2) + ' mi)';
+  return m.toFixed(0) + ' m (' + (m * 3.281).toFixed(0) + ' ft)';
 }

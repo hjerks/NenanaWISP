@@ -998,3 +998,115 @@ body {
     font-size: 0.72rem;
   }
 }
+
+/* ── Coverage Check view ────────────────────────────────── */
+
+.coverage-panel .coverage-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  padding: 16px;
+}
+#coverage-map {
+  height: 70vh;
+  min-height: 480px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #e8eef2;
+}
+.coverage-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.coverage-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coverage-controls input[type="text"] {
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.coverage-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+.coverage-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  background: #f8fafc;
+  border-left: 3px solid var(--color-primary-light);
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+.cov-result {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--color-white);
+  box-shadow: var(--shadow-sm);
+}
+.cov-badge {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  color: #fff;
+}
+.cov-badge-good     { background: #16a34a; }
+.cov-badge-marginal { background: #f59e0b; }
+.cov-badge-bad      { background: #dc2626; }
+.cov-badge-none     { background: #6b7280; }
+.cov-addr {
+  font-weight: 600;
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+.cov-stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  font-size: 0.85rem;
+}
+.cov-stats dt { color: var(--color-text-light); }
+.cov-stats dd { text-align: right; font-variant-numeric: tabular-nums; }
+.cov-coords { margin-top: 8px; color: var(--color-text-light); }
+.cov-error {
+  color: var(--color-danger);
+  font-size: 0.85rem;
+  background: #fef2f2;
+  border-left: 3px solid var(--color-danger);
+  padding: 10px;
+  border-radius: 4px;
+}
+.loading-inline {
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  padding: 10px;
+}
+.cov-tower-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+@media (max-width: 760px) {
+  .coverage-panel .coverage-body {
+    grid-template-columns: 1fr;
+  }
+  #coverage-map {
+    height: 55vh;
+    min-height: 360px;
+  }
+}

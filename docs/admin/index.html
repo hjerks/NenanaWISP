@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Portal - NNA Community Broadband</title>
   <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin="" defer></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -35,6 +41,7 @@
         <li><a href="#leads" data-view="leads"><span class="nav-icon">&#128203;</span> Leads</a></li>
         <hr class="sidebar-divider">
         <li><a href="#installs" data-view="installs"><span class="nav-icon">&#128295;</span> Installs</a></li>
+        <li><a href="#coverage" data-view="coverage"><span class="nav-icon">&#128205;</span> Coverage Check</a></li>
         <li><a href="#equipment" data-view="equipment"><span class="nav-icon">&#128225;</span> Equipment</a></li>
         <hr class="sidebar-divider">
         <li><a href="#support" data-view="support"><span class="nav-icon">&#127919;</span> Support</a></li>

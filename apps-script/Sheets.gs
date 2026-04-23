@@ -32,7 +32,9 @@ var L = {
   STRIPE_CUST_ID: 16,
   CHECKOUT_LINK: 17,
   LEAD_STATUS:  18,
-  CREATED_DATE: 19
+  CREATED_DATE: 19,
+  LATITUDE:     20,
+  LONGITUDE:    21
 };
 
 // ── Column Indexes (1-based) for Customers tab ─────────────
@@ -61,20 +63,23 @@ var LEADS_HEADERS = [
   'Timestamp', 'Full Name', 'Email', 'Phone', 'Service Address',
   'City', 'State', 'ZIP', 'Plan', 'Contact Preference',
   'Contact Method', 'Install Preference', 'Notes', 'TOS Agreed',
-  'Row Key', 'Stripe Customer ID', 'Checkout Link', 'Lead Status', 'Created Date'
+  'Row Key', 'Stripe Customer ID', 'Checkout Link', 'Lead Status', 'Created Date',
+  'Latitude', 'Longitude'
 ];
 
 var CUSTOMERS_HEADERS = [
   'Stripe Customer ID', 'Full Name', 'Email', 'Phone', 'Service Address',
   'Plan', 'Stripe Subscription ID', 'Subscription Status', 'Monthly Price',
   'Portal Link', 'Signup Date', 'Last Payment Date', 'Last Event',
-  'Row Key', 'Notes', 'Billing Method'
+  'Row Key', 'Notes', 'Billing Method',
+  'Latitude', 'Longitude'
 ];
 
 var INSTALLS_HEADERS = [
   'Customer Name', 'Email', 'Service Address', 'Plan',
   'Requested Preference', 'Scheduled Date', 'Technician',
-  'Equipment Assigned', 'Status', 'Completion Date', 'Notes'
+  'Equipment Assigned', 'Status', 'Completion Date', 'Notes',
+  'Latitude', 'Longitude'
 ];
 
 var EQUIPMENT_HEADERS = [
