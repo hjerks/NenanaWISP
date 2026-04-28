@@ -6,6 +6,12 @@
   <title>NNA Community Broadband - Fast, Community Broadband for Nenana</title>
   <meta name="description" content="Locally operated wireless broadband serving homes and businesses in Nenana, Alaska.">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin="" defer></script>
 </head>
 <body>
 
@@ -104,6 +110,10 @@
         <input type="hidden" name="source" value="signup_form">
         <input type="hidden" name="requested_install_date" id="requested_install_date" value="ASAP">
         <input type="hidden" name="coverage_prediction" id="coverage_prediction" value="">
+        <!-- Filled by step 2 once the customer drops a pin on the map. The
+             backend prefers these over geocoding the address. -->
+        <input type="hidden" name="pinned_lat" id="pinned_lat" value="">
+        <input type="hidden" name="pinned_lon" id="pinned_lon" value="">
 
         <!-- ── Step 1: customer info ─────────────────────── -->
         <div class="signup-step" id="step-1">
@@ -198,18 +208,24 @@
 
         <!-- ── Step 2: coverage check ────────────────────── -->
         <div class="signup-step" id="step-2" style="display:none;">
+          <div class="signup-map-instructions">
+            <strong>Click your home on the map.</strong> Google's address data for Nenana isn't
+            always exact, so the most accurate way to check coverage is to drop a pin where
+            you actually live. You can drag the pin to fine-tune.
+          </div>
+          <div id="signup-map"></div>
           <div id="coverage-result" class="coverage-result loading">
-            <p>Looking up your address and checking coverage&hellip;</p>
+            <p>Loading map&hellip;</p>
           </div>
           <p class="coverage-disclaimer">
-            <strong>Heads up:</strong> this prediction uses a coverage map of Nenana but
-            doesn't account for trees, buildings, or terrain right at your home.
-            Final coverage depends on a site survey our tech does in person, so
-            even a "no signal" prediction here doesn't necessarily mean we can't serve you.
+            <strong>Heads up:</strong> this prediction is based on a coverage model of Nenana
+            but doesn't account for trees, buildings, or terrain right at your home.
+            Final coverage depends on a site survey our tech does in person, so even
+            a "no signal" prediction here doesn't necessarily mean we can't serve you.
           </p>
           <div class="step-actions">
             <button type="button" class="btn-secondary" id="step2-back-btn">&larr; Back</button>
-            <button type="button" class="submit-btn" id="step2-next-btn">Next: Pick Install Date &rarr;</button>
+            <button type="button" class="submit-btn" id="step2-next-btn" disabled>Next: Pick Install Date &rarr;</button>
           </div>
         </div>
 

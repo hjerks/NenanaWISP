@@ -126,15 +126,23 @@ function handleFormSubmission_(e) {
 
   var rowKey = Utilities.getUuid();
 
-  // Geocode best-effort. Failure does not block signup - tech can geocode
-  // later via the admin Coverage view.
+  // Coordinates: prefer the lat/lon the customer pinned on the map (the
+  // ground truth) over geocoding the typed address (which is unreliable
+  // for Nenana). Fall back to geocoding only if no pin was placed.
   var lat = '', lon = '';
-  var geo = geocodeAddress_({ address: [address, city, state, zip].filter(Boolean).join(', ') });
-  if (geo && !geo.error) {
-    lat = geo.lat;
-    lon = geo.lon;
-  } else if (geo && geo.error) {
-    Logger.log('Lead geocode failed for ' + email + ': ' + (geo.message || geo.error));
+  var pinnedLat = parseFloat(p.pinned_lat);
+  var pinnedLon = parseFloat(p.pinned_lon);
+  if (isFinite(pinnedLat) && isFinite(pinnedLon)) {
+    lat = pinnedLat;
+    lon = pinnedLon;
+  } else {
+    var geo = geocodeAddress_({ address: [address, city, state, zip].filter(Boolean).join(', ') });
+    if (geo && !geo.error) {
+      lat = geo.lat;
+      lon = geo.lon;
+    } else if (geo && geo.error) {
+      Logger.log('Lead geocode failed for ' + email + ': ' + (geo.message || geo.error));
+    }
   }
 
   ensureHeaders_(TAB_LEADS, LEADS_HEADERS);

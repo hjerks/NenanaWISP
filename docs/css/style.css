@@ -574,6 +574,27 @@ a:hover {
 
 /* ── Coverage result ───────────────────────────────────── */
 
+.signup-map-instructions {
+  background: #eff6ff;
+  border-left: 4px solid #2e86c1;
+  padding: 12px 14px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  color: #1e3a5f;
+  line-height: 1.5;
+}
+#signup-map {
+  height: 380px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  margin-bottom: 14px;
+  background: #e2e8f0;
+}
+@media (max-width: 600px) {
+  #signup-map { height: 320px; }
+}
+
 .coverage-result {
   padding: 20px;
   border-radius: 8px;

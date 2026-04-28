@@ -17,6 +17,12 @@ var COVERAGE_JSON_URL = 'coverage/nenana_coverage.json';
 var _coverageData = null;
 var _coverageFetchPromise = null;
 var _currentStep = 1;
+var _signupMap = {
+  map: null,        // L.Map
+  overlay: null,    // L.ImageOverlay
+  pin: null,        // L.Marker
+  initialized: false
+};
 
 // ── Plan Selection ─────────────────────────────────────────
 
@@ -143,80 +149,139 @@ function classifyRssi(rssi, thresholds) {
   };
 }
 
+/**
+ * Initialize (or re-show) the signup coverage map. Drops an initial pin
+ * using a best-effort geocode of the entered address, but the customer is
+ * the source of truth - they can click anywhere or drag the pin to confirm.
+ */
 function runCoverageCheck() {
   var box = document.getElementById('coverage-result');
   var nextBtn = document.getElementById('step2-next-btn');
   if (!box) return;
-
   box.className = 'coverage-result loading';
-  box.innerHTML = '<p>Looking up your address and checking coverage&hellip;</p>';
+  box.innerHTML = '<p>Loading map&hellip;</p>';
+  // Re-disable on each entry; re-enabled when the customer drops/confirms a pin.
+  if (nextBtn) nextBtn.disabled = true;
 
-  var address = document.getElementById('address').value.trim();
-  var city = document.getElementById('city').value.trim();
-  var state = document.getElementById('state').value.trim();
-  var zip = document.getElementById('zip').value.trim();
-  var fullAddress = [address, city, state, zip].filter(Boolean).join(', ');
+  if (typeof L === 'undefined') {
+    // Leaflet JS uses defer; wait for it on cold load.
+    setTimeout(runCoverageCheck, 100);
+    return;
+  }
 
-  Promise.all([loadCoverageData(), geocodeAddressPublic(fullAddress)])
-    .then(function(results) {
-      var cov = results[0];
-      var geo = results[1];
-
-      if (geo.error || !isFinite(geo.lat) || !isFinite(geo.lon)) {
-        // Make diagnostics visible in console + UI so we can tell whether
-        // it's a missing API key, a deployment that hasn't been refreshed,
-        // a quota issue, or a genuine no-match address.
-        console.warn('[signup] geocode response:', geo);
-        var why;
-        if (geo.error === 'no_key') {
-          why = 'The Google Geocoding API key is not configured on the server yet.';
-        } else if (geo.error === 'no_result') {
-          why = 'Google could not find that address (status: ' + (geo.status || 'unknown') + '). Please double-check the street, city, and ZIP.';
-        } else if (geo.error === 'fetch_failed') {
-          why = 'The geocoding service is unreachable right now.';
-        } else if (geo.status === 'ok' && !geo.lat) {
-          // The Apps Script default doGet returned, meaning the new
-          // public_geocode endpoint isn't deployed yet.
-          why = 'Geocoding endpoint not deployed. The signup will still work; the tech will review your address manually.';
-        } else if (geo.error) {
-          why = 'Geocoding error: ' + geo.error + (geo.message ? ' (' + geo.message + ')' : '');
+  loadCoverageData()
+    .then(function(cov) {
+      initSignupMap(cov);
+      // Try to geocode the entered address and drop the initial pin there.
+      // If geocoding fails, prompt the user to click on the map instead.
+      var address = document.getElementById('address').value.trim();
+      var city = document.getElementById('city').value.trim();
+      var state = document.getElementById('state').value.trim();
+      var zip = document.getElementById('zip').value.trim();
+      var fullAddress = [address, city, state, zip].filter(Boolean).join(', ');
+      return geocodeAddressPublic(fullAddress).then(function(geo) {
+        if (geo && !geo.error && isFinite(geo.lat) && isFinite(geo.lon)) {
+          placePin(geo.lat, geo.lon);
         } else {
-          why = 'We could not find that address on the map. The tech will still review it.';
+          console.warn('[signup] geocode hint failed (ok - user will click):', geo);
+          // No pin yet - prompt the user.
+          box.className = 'coverage-result unknown';
+          box.innerHTML = '<div class="cov-badge cov-unknown">Click your home on the map</div>' +
+            '<p>We couldn\'t auto-locate your address - tap or click the spot on the map where you live.</p>';
         }
-        showCoverageResult({
-          cls: 'unknown',
-          label: 'Could not locate address',
-          desc: why
-        }, null);
-        return;
-      }
-
-      var sw = cov.bounds[0], ne = cov.bounds[1];
-      var rows = cov.rows, cols = cov.cols;
-      var ri = Math.round((ne[0] - geo.lat) / (ne[0] - sw[0]) * (rows - 1));
-      var ci = Math.round((geo.lon - sw[1]) / (ne[1] - sw[1]) * (cols - 1));
-      var inGrid = (ri >= 0 && ri < rows && ci >= 0 && ci < cols);
-      var rssi = inGrid ? cov.rssi_dbm[ri][ci] : null;
-
-      var verdict = classifyRssi(rssi, cov.thresholds);
-      showCoverageResult(verdict, rssi);
-
-      // Stash the prediction so the backend tech-notification email includes it.
-      var hidden = document.getElementById('coverage_prediction');
-      if (hidden) {
-        hidden.value = verdict.label + (rssi != null ? ' (' + rssi.toFixed(1) + ' dBm)' : '');
-      }
+      });
     })
     .catch(function(err) {
-      showCoverageResult({
-        cls: 'unknown',
-        label: 'Coverage check unavailable',
-        desc: 'We could not run the coverage check right now. Your tech will still review your request.'
-      }, null);
-    })
-    .then(function() {
+      console.warn('[signup] coverage map init failed:', err);
+      box.className = 'coverage-result unknown';
+      box.innerHTML = '<div class="cov-badge cov-unknown">Coverage check unavailable</div>' +
+        '<p>We couldn\'t load the coverage map right now. Your tech will still review your request.</p>';
+      // Allow forward progress even with no map.
+      var nextBtn = document.getElementById('step2-next-btn');
       if (nextBtn) nextBtn.disabled = false;
     });
+}
+
+function initSignupMap(cov) {
+  if (_signupMap.initialized) {
+    // Re-shown after going Back to step 1 then forward again - just
+    // refresh tile layout (Leaflet needs invalidateSize when its container
+    // was hidden during init).
+    setTimeout(function() { _signupMap.map.invalidateSize(); }, 50);
+    return;
+  }
+
+  var sw = cov.bounds[0], ne = cov.bounds[1];
+  var bounds = L.latLngBounds([sw[0], sw[1]], [ne[0], ne[1]]);
+  var tower = (cov.towers && cov.towers[0]) || null;
+  var center = tower ? [tower.lat, tower.lon] : bounds.getCenter();
+
+  var map = L.map('signup-map', { zoomControl: true, scrollWheelZoom: false }).setView(center, 14);
+  _signupMap.map = map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  _signupMap.overlay = L.imageOverlay('coverage/nenana_coverage.png', bounds, { opacity: 0.55 }).addTo(map);
+
+  if (tower) {
+    L.circleMarker([tower.lat, tower.lon], {
+      radius: 6, color: '#1a5276', fillColor: '#1a5276', fillOpacity: 1, weight: 2
+    }).bindPopup('Tower').addTo(map);
+  }
+
+  map.on('click', function(e) {
+    placePin(e.latlng.lat, e.latlng.lng);
+  });
+
+  // Touch hint: scroll-wheel disabled so the page can scroll past the map
+  // on mobile without zooming. Two-finger scroll/pinch still works.
+  _signupMap.initialized = true;
+
+  // Re-layout once the panel has actually rendered.
+  setTimeout(function() { map.invalidateSize(); }, 100);
+}
+
+function placePin(lat, lon) {
+  if (!_signupMap.map) return;
+  if (_signupMap.pin) {
+    _signupMap.pin.setLatLng([lat, lon]);
+  } else {
+    _signupMap.pin = L.marker([lat, lon], { draggable: true }).addTo(_signupMap.map);
+    _signupMap.pin.on('dragend', function(e) {
+      var ll = e.target.getLatLng();
+      placePin(ll.lat, ll.lng);
+    });
+  }
+  _signupMap.map.panTo([lat, lon]);
+  document.getElementById('pinned_lat').value = lat.toFixed(6);
+  document.getElementById('pinned_lon').value = lon.toFixed(6);
+  classifyAndShow(lat, lon);
+}
+
+function classifyAndShow(lat, lon) {
+  var cov = _coverageData;
+  var box = document.getElementById('coverage-result');
+  var nextBtn = document.getElementById('step2-next-btn');
+  if (!cov || !box) return;
+
+  var sw = cov.bounds[0], ne = cov.bounds[1];
+  var rows = cov.rows, cols = cov.cols;
+  var ri = Math.round((ne[0] - lat) / (ne[0] - sw[0]) * (rows - 1));
+  var ci = Math.round((lon - sw[1]) / (ne[1] - sw[1]) * (cols - 1));
+  var inGrid = (ri >= 0 && ri < rows && ci >= 0 && ci < cols);
+  var rssi = inGrid ? cov.rssi_dbm[ri][ci] : null;
+
+  var verdict = classifyRssi(rssi, cov.thresholds);
+  showCoverageResult(verdict, rssi);
+
+  // Stash for the tech email
+  var hidden = document.getElementById('coverage_prediction');
+  if (hidden) {
+    hidden.value = verdict.label + (rssi != null ? ' (' + rssi.toFixed(1) + ' dBm)' : '') +
+      ' @ ' + lat.toFixed(5) + ',' + lon.toFixed(5);
+  }
+  if (nextBtn) nextBtn.disabled = false;
 }
 
 function showCoverageResult(verdict, rssi) {
