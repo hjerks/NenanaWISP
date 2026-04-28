@@ -27,17 +27,7 @@ var viewingCustomerId = null;
 // ── Initialization ─────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Back-compat: older flow redirected with #token=... in the URL hash.
-  var hash = window.location.hash;
-  if (hash.indexOf('#token=') === 0) {
-    adminToken = hash.substring(7);
-    sessionStorage.setItem('adminToken', adminToken);
-    window.location.hash = '';
-  }
-
-  if (!adminToken) {
-    adminToken = sessionStorage.getItem('adminToken');
-  }
+  adminToken = sessionStorage.getItem('adminToken');
 
   if (adminToken) {
     showApp();
@@ -113,8 +103,14 @@ function onGoogleCredential(response) {
   var authBtn = document.getElementById('auth-btn');
   if (authBtn) authBtn.disabled = true;
 
-  var url = APPS_SCRIPT_URL + '?action=google_auth&id_token=' + encodeURIComponent(response.credential);
-  fetch(url, { method: 'GET', redirect: 'follow' })
+  // POST the ID token instead of GET so it doesn't end up in browser
+  // history, Referer headers, or upstream access logs.
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'action=google_auth&id_token=' + encodeURIComponent(response.credential),
+    redirect: 'follow'
+  })
     .then(function(res) { return res.text(); })
     .then(function(text) {
       var data;
@@ -278,7 +274,6 @@ function apiCall(action, params, callback, _retryCount) {
       } catch (e) {
         // Non-JSON response (Google error page) -- retry
         if (retryCount < maxRetries) {
-          console.log('Retrying ' + action + ' (non-JSON response)');
           setTimeout(function() { apiCall(action, params, callback, retryCount + 1); }, 1500);
         } else if (cachedData[action] && (Date.now() - cachedData[action].time < 300000)) {
           callback(null, cachedData[action].data);
@@ -291,7 +286,6 @@ function apiCall(action, params, callback, _retryCount) {
       clearTimeout(timeoutId);
       // Auto-retry once on any failure
       if (retryCount < maxRetries) {
-        console.log('Retrying ' + action + ' (' + err.message + ')');
         setTimeout(function() { apiCall(action, params, callback, retryCount + 1); }, 1500);
         return;
       }
@@ -1018,19 +1012,19 @@ function loadLeads(container) {
         html += '<td>' + formatRequestedInstall(l['Requested Install Date']) + '</td>';
         html += '<td>' + badge(status) + '</td>';
         html += '<td><div class="btn-group">';
-        html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + JSON.stringify(l) + ')\'>Edit</button>';
+        html += '<button class="btn btn-sm btn-outline" onclick=\'editLead(' + escAttr(JSON.stringify(l)) + ')\'>Edit</button>';
 
         if (status === 'Survey Requested') {
           html += '<button class="btn btn-sm btn-success" onclick=\'approveSurvey(' + l._rowNum + ', ' +
-                  JSON.stringify(l['Requested Install Date'] || '') + ')\'>Approve</button>';
+                  escAttr(JSON.stringify(l['Requested Install Date'] || '')) + ')\'>Approve</button>';
           html += '<button class="btn btn-sm btn-danger" onclick=\'rejectSurvey(' + l._rowNum + ')\'>Cannot Install</button>';
         } else if (status === 'Survey Approved') {
           html += '<button class="btn btn-sm btn-primary" onclick=\'completeInstall(' + l._rowNum + ', ' +
-                  JSON.stringify(l['Full Name'] || '') + ')\'>Install Complete &rarr; Send Payment</button>';
+                  escAttr(JSON.stringify(l['Full Name'] || '')) + ')\'>Install Complete &rarr; Send Payment</button>';
           html += '<button class="btn btn-sm btn-danger" onclick=\'rejectSurvey(' + l._rowNum + ')\'>Cancel</button>';
         } else if (status === 'Awaiting Payment' || status === 'Checkout Sent') {
           html += '<button class="btn btn-sm btn-success" onclick=\'convertLeadManual(' + l._rowNum + ', ' +
-                  JSON.stringify(l['Full Name'] || '') + ')\'>Mark Paid</button>';
+                  escAttr(JSON.stringify(l['Full Name'] || '')) + ')\'>Mark Paid</button>';
           html += '<button class="btn btn-sm btn-outline" onclick=\'resendCheckout(' + l._rowNum + ')\'>Resend Link</button>';
           if (l['Checkout Link']) {
             html += '<button class="btn btn-sm btn-outline" onclick=\'copyCheckoutLink("' + esc(l['Checkout Link']) + '")\'>Copy</button>';
@@ -1190,7 +1184,7 @@ function refreshInstallsList() {
     html += '<td>' + formatDate(inst['Scheduled Date']) + '</td>';
     html += '<td>' + esc(inst['Technician']) + '</td>';
     html += '<td>' + badge(inst['Status']) + '</td>';
-    html += '<td><button class="btn btn-sm btn-outline" onclick=\'editInstall(' + JSON.stringify(inst) + ')\'>Edit</button></td>';
+    html += '<td><button class="btn btn-sm btn-outline" onclick=\'editInstall(' + escAttr(JSON.stringify(inst)) + ')\'>Edit</button></td>';
     html += '</tr>';
   });
   html += '</table></div>';
@@ -1249,7 +1243,7 @@ function loadEquipment(container) {
         html += '<td><code>' + esc(eq['IP Address']) + '</code></td>';
         html += '<td>' + esc(eq['Assigned To']) + '</td>';
         html += '<td>' + badge(eq['Status']) + '</td>';
-        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editEquipment(' + JSON.stringify(eq) + ')\'>Edit</button></td>';
+        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editEquipment(' + escAttr(JSON.stringify(eq)) + ')\'>Edit</button></td>';
         html += '</tr>';
       });
       html += '</table></div>';
@@ -1335,7 +1329,7 @@ function loadSupport(container) {
         html += '<td>' + esc(t['Category']) + '</td>';
         html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(t['Description']) + '</td>';
         html += '<td>' + badge(t['Status']) + '</td>';
-        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editTicket(' + JSON.stringify(t) + ')\'>Edit</button></td>';
+        html += '<td><button class="btn btn-sm btn-outline" onclick=\'editTicket(' + escAttr(JSON.stringify(t)) + ')\'>Edit</button></td>';
         html += '</tr>';
       });
       html += '</table></div>';
@@ -1526,6 +1520,20 @@ function esc(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Escape a value for use inside an HTML attribute (single OR double quoted).
+// Use this when interpolating JSON.stringify() output or any user-controlled
+// string into an onclick='...' / onclick="..." handler. Without this, a
+// single quote in user data (e.g. a lead's name) breaks out of the attribute.
+function escAttr(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/'/g, '&#39;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function badge(status) {
@@ -2051,6 +2059,9 @@ function startReaderStatusPolling() {
 
 function pollReaderStatus() {
   apiCall('admin_reader_status', null, function(err, data) {
+    if (!err && data && data.mode) {
+      updateStripeModeBanner(data.mode);
+    }
     var pill = document.getElementById('reader-status-pill');
     if (!pill) return;
     if (err || !data || data.configured === false) {
@@ -2072,6 +2083,25 @@ function pollReaderStatus() {
       pill.style.color = '#991b1b';
     }
   });
+}
+
+// Show a yellow TEST MODE banner whenever the backend reports it is using
+// a sk_test_ Stripe key. Hide it in live mode. The banner is created lazily
+// on first call and persists until the next reader-status response.
+function updateStripeModeBanner(mode) {
+  var banner = document.getElementById('stripe-mode-banner');
+  if (mode !== 'test') {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'stripe-mode-banner';
+    banner.textContent = 'TEST MODE — Stripe sandbox; no real money is moving.';
+    banner.style.cssText = 'background:#fef3c7;color:#92400e;border-bottom:1px solid #fde68a;padding:6px 12px;font-size:13px;font-weight:600;text-align:center;letter-spacing:0.02em;';
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+  banner.style.display = '';
 }
 
 /**
@@ -2313,7 +2343,6 @@ function submitQuickCharge() {
  *
  * opts: { amount (dollars), description, customerId (or null), label, onSuccess }
  */
-var _readerPollHandle = null;
 var _readerPollTimeout = null;
 
 function pushReaderCharge(opts) {

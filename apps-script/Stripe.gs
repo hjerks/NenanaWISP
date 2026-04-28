@@ -22,6 +22,18 @@ function propOr(key, defaultVal) {
   return val || defaultVal;
 }
 
+/**
+ * Returns 'live' or 'test' based on the Stripe secret key prefix. Used by
+ * the admin portal to display a TEST MODE banner so operators don't confuse
+ * sandbox actions with live ones. Auto-detected from STRIPE_SECRET_KEY so
+ * no extra Script Property is needed.
+ */
+function getStripeMode_() {
+  var key = propOr('STRIPE_SECRET_KEY', '');
+  if (key.indexOf('sk_live_') === 0) return 'live';
+  return 'test';
+}
+
 // ── Price ID Lookup ────────────────────────────────────────
 
 /**
@@ -123,38 +135,21 @@ function createOrGetStripeCustomer_(data) {
     return search.data[0];
   }
 
-  // Create new customer
+  var addr = data.address || {};
   var payload = {
-    email: data.email,
-    name: data.name,
-    phone: data.phone || ''
-  };
-
-  if (data.address) {
-    payload['address[line1]'] = data.address.line1 || '';
-    payload['address[city]'] = data.address.city || '';
-    payload['address[state]'] = data.address.state || '';
-    payload['address[postal_code]'] = data.address.zip || '';
-    payload['address[country]'] = 'US';
-    // Use flat keys for address since toFormEncoded_ handles nested objects
-    // but Stripe expects the flat bracket format for top-level
-  }
-
-  // Actually, let's use nested format which toFormEncoded_ handles correctly
-  var createPayload = {
     email: data.email,
     name: data.name,
     phone: data.phone || '',
     address: {
-      line1: data.address ? data.address.line1 : '',
-      city: data.address ? data.address.city : '',
-      state: data.address ? data.address.state : '',
-      postal_code: data.address ? data.address.zip : '',
+      line1: addr.line1 || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      postal_code: addr.zip || '',
       country: 'US'
     }
   };
 
-  return stripeRequest_('/v1/customers', 'post', createPayload);
+  return stripeRequest_('/v1/customers', 'post', payload);
 }
 
 // ── Checkout Session ───────────────────────────────────────

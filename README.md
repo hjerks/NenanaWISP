@@ -85,6 +85,8 @@ DIY ISP billing and subscriber management for the Nenana Native Association WISP
 | `CONTACT_PHONE` | Your contact phone |
 | `ADMIN_EMAILS` | Comma-separated admin emails (e.g., `you@gmail.com`) |
 | `ADMIN_SECRET` | A random string (e.g., generate at random.org, 32+ chars) |
+| `WEBHOOK_URL_SECRET` | A random string (32+ chars). Append as `?secret=...` to the Stripe webhook URL (Step 4). |
+| `GOOGLE_OAUTH_CLIENT_ID` | OAuth client ID from Google Cloud Console (must match `GOOGLE_CLIENT_ID` in `docs/admin/js/admin.js`) |
 
 Optional properties:
 | Property | Value |
@@ -92,6 +94,7 @@ Optional properties:
 | `INSTALL_FEE_PRICE` | `price_...` (one-time install fee, if applicable) |
 | `LATE_FEE_AMOUNT_CENTS` | `1000` (late fee in cents, default $10) |
 | `LATE_FEE_GRACE_DAYS` | `7` (days before late fee applies) |
+| `TERMINAL_READER_ID` | `tmr_...` (Stripe Terminal S700 reader ID, if using in-person card payments) |
 
 6. **Initialize the sheets:** In Apps Script, select `initializeAllSheets` from the function dropdown and click Run. Authorize when prompted. This creates all tabs with headers.
 
@@ -109,17 +112,26 @@ Optional properties:
 
 ### Step 4: Configure Stripe Webhook
 
-1. In Stripe Dashboard, go to **Developers > Webhooks**
-2. Click **+ Add endpoint**
-3. Paste your Apps Script web app URL (from Step 3.7)
-4. Select these events:
+Apps Script web apps cannot read arbitrary HTTP headers, so we authenticate
+incoming webhooks via a URL-query secret instead of Stripe's HMAC signature.
+
+1. Pick a long random string for `WEBHOOK_URL_SECRET` (e.g., from random.org,
+   32+ chars). Add it to Script Properties.
+2. In Stripe Dashboard, go to **Developers > Webhooks**
+3. Click **+ Add endpoint**
+4. Paste your Apps Script web app URL (from Step 3.7) **with the secret
+   appended as a query parameter**:
+   `https://script.google.com/macros/s/.../exec?secret=YOUR_WEBHOOK_URL_SECRET`
+5. Select these events:
    - `checkout.session.completed`
    - `invoice.paid`
    - `invoice.payment_failed`
    - `customer.subscription.deleted`
    - `customer.subscription.updated`
-5. Click **Add endpoint**
-6. Copy the **Signing secret** (`whsec_...`) and add it as `WEBHOOK_SECRET` in Script Properties (for future use)
+6. Click **Add endpoint**
+
+If `WEBHOOK_URL_SECRET` is not set, all incoming webhooks are rejected with
+`webhook auth not configured` to prevent accidentally going live unauthenticated.
 
 ---
 
@@ -174,9 +186,16 @@ When ready for real customers:
 4. Update Script Properties:
    - `STRIPE_SECRET_KEY` → `sk_live_...`
    - All `PRICE_*` properties → new live `price_...` IDs
-5. Create a new webhook endpoint in Stripe (live mode) with the same Apps Script URL
-6. Update `WEBHOOK_SECRET` with the new signing secret
-7. Test with a real card
+   - `TERMINAL_READER_ID` → new live `tmr_...` (register a new reader in live mode)
+5. Create a new webhook endpoint in Stripe (live mode) using the same Apps
+   Script URL with `?secret=WEBHOOK_URL_SECRET` appended (the value from
+   Step 4 still works in live mode -- the URL secret is independent of
+   Stripe mode)
+6. Test with a real card
+
+The admin portal automatically detects `sk_test_` vs `sk_live_` and shows a
+yellow **TEST MODE** banner whenever the backend is on a sandbox key, so
+operators don't confuse sandbox actions with live ones.
 
 ---
 

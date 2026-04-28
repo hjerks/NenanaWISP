@@ -59,6 +59,52 @@ var C_ = {
   BILLING_METHOD: 16   // 'auto' (Stripe charges card) or 'manual' (Stripe send_invoice)
 };
 
+// ── Column Indexes (1-based) for Installs tab ──────────────
+var I_ = {
+  CUSTOMER_NAME:    1,
+  EMAIL:            2,
+  ADDRESS:          3,
+  PLAN:             4,
+  REQUESTED_PREF:   5,
+  SCHEDULED_DATE:   6,
+  TECHNICIAN:       7,
+  EQUIPMENT:        8,
+  STATUS:           9,
+  COMPLETION_DATE:  10,
+  NOTES:            11,
+  LATITUDE:         12,
+  LONGITUDE:        13
+};
+
+// ── Column Indexes (1-based) for Equipment tab ─────────────
+var EQ_ = {
+  DEVICE_TYPE:  1,
+  MAKE_MODEL:   2,
+  SERIAL:       3,
+  MAC:          4,
+  IP:           5,
+  VLAN:         6,
+  ASSIGNED_TO:  7,
+  INSTALL_DATE: 8,
+  LOCATION:     9,
+  STATUS:       10,
+  NOTES:        11
+};
+
+// ── Column Indexes (1-based) for Support tab ───────────────
+var S_ = {
+  TICKET_NUMBER:  1,
+  CUSTOMER_NAME:  2,
+  EMAIL:          3,
+  DATE_OPENED:    4,
+  CATEGORY:       5,
+  DESCRIPTION:    6,
+  STATUS:         7,
+  RESOLUTION:     8,
+  RESOLVED_DATE:  9,
+  NOTES:          10
+};
+
 // ── Sheet Headers ──────────────────────────────────────────
 
 var LEADS_HEADERS = [

@@ -6,8 +6,27 @@
 /**
  * Handle incoming Stripe webhook events.
  * Called by doPost() when the request is not a signup form submission.
+ *
+ * Authentication: Apps Script web apps cannot read arbitrary HTTP headers
+ * (no access to Stripe-Signature for HMAC verification), so we authenticate
+ * via a URL-query secret instead. Configure the Stripe webhook endpoint URL
+ * with `?secret=<value>` appended, where <value> matches the Script Property
+ * WEBHOOK_URL_SECRET. If the property is unset the webhook is rejected to
+ * avoid accidentally going live with no auth.
  */
 function handleWebhook(e) {
+  // Reject unauthenticated webhook deliveries.
+  var expectedSecret = propOr('WEBHOOK_URL_SECRET', '');
+  var providedSecret = (e.parameter && e.parameter.secret) || '';
+  if (!expectedSecret) {
+    Logger.log('Webhook rejected: WEBHOOK_URL_SECRET is not set in Script Properties.');
+    return ContentService.createTextOutput('webhook auth not configured').setMimeType(ContentService.MimeType.TEXT);
+  }
+  if (providedSecret !== expectedSecret) {
+    Logger.log('Webhook rejected: missing or mismatched secret query param.');
+    return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
+  }
+
   var raw = '';
   try {
     raw = e.postData ? e.postData.contents : '';
@@ -17,17 +36,25 @@ function handleWebhook(e) {
 
     var evt = JSON.parse(raw);
 
-    // Log the event before processing
-    logWebhookEvent_(evt, raw, 'received');
+    // Idempotency: if we've already processed this Stripe event ID, skip.
+    // Stripe retries on any non-2xx or timeout, so duplicates are normal.
+    if (evt.id && webhookEventAlreadyProcessed_(evt.id)) {
+      Logger.log('Webhook duplicate ignored: ' + evt.id);
+      return ContentService.createTextOutput('ok (duplicate)').setMimeType(ContentService.MimeType.TEXT);
+    }
 
-    // Process the event
+    // Process first, then log success. If processing throws, the catch
+    // block logs an error row instead -- so retries of failed events still
+    // run (idempotency check only matches 'processed' rows).
     processStripeEvent_(evt);
+    logWebhookEvent_(evt, raw, 'processed');
 
     return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
 
   } catch (err) {
     Logger.log('Webhook error: ' + err.message + '\n' + err.stack);
-    // Log the error
+    // Log the error so a human can see it; the event will not be marked
+    // processed, which lets Stripe retries succeed if the cause is transient.
     try {
       logWebhookEvent_(null, raw, 'error: ' + err.message);
     } catch (logErr) {
@@ -36,6 +63,32 @@ function handleWebhook(e) {
     // Return 200 to prevent Stripe from retrying (we logged the error)
     return ContentService.createTextOutput('error logged').setMimeType(ContentService.MimeType.TEXT);
   }
+}
+
+/**
+ * Returns true if a Stripe event with this ID has already been logged with
+ * a non-error status. Reads the Webhook_Log tab, which is small enough that
+ * a full scan is fine for our volume (~100 customers).
+ */
+function webhookEventAlreadyProcessed_(eventId) {
+  if (!eventId) return false;
+  ensureHeaders_(TAB_WEBHOOK_LOG, WEBHOOK_LOG_HEADERS);
+  var sheet = getSheet_(TAB_WEBHOOK_LOG);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  // Columns: Timestamp, Event Type, Stripe Cust ID, Email, Sub ID, Row Key, Status, Preview
+  // The full event ID lives inside the JSON preview; cheap substring match.
+  var previews = sheet.getRange(2, 8, lastRow - 1, 1).getValues();
+  var statuses = sheet.getRange(2, 7, lastRow - 1, 1).getValues();
+  var needle = '"id":"' + eventId + '"';
+  for (var i = 0; i < previews.length; i++) {
+    var preview = String(previews[i][0] || '');
+    var status = String(statuses[i][0] || '');
+    if (preview.indexOf(needle) !== -1 && status === 'processed') {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -84,11 +137,20 @@ function handleCheckoutCompleted_(session) {
   var planName = metadata.plan || '';
   var subId = session.subscription || '';
 
+  // Idempotency at the row level: if a customer row for this Stripe customer
+  // already exists, the lead has already been promoted -- don't create a
+  // duplicate. (The event-ID dedupe in handleWebhook covers Stripe retries
+  // of the same event; this guards against a second checkout for the same
+  // customer producing a second customer row.)
+  if (custId && findCustomerRow_(custId, email)) {
+    Logger.log('checkout.session.completed: customer row already exists for ' + custId + ', skipping promotion.');
+    return;
+  }
+
   // Find the lead row
   var leadRow = findLeadRow_(rowKey, custId, email);
   if (!leadRow) {
     Logger.log('checkout.session.completed: Could not find lead row for ' + email + ' / ' + custId);
-    logWebhookEvent_({ type: 'checkout.session.completed' }, '', 'error: lead row not found');
     return;
   }
 
@@ -130,8 +192,6 @@ function handleCheckoutCompleted_(session) {
     // Try without portal link
     sendWelcomeEmail_(email, name, plan, '');
   }
-
-  logWebhookEvent_({ type: 'checkout.session.completed', data: { object: session } }, '', 'processed');
 }
 
 /**

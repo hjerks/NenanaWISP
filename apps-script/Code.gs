@@ -31,6 +31,11 @@ function doPost(e) {
       return handleFormSubmission_(e);
     }
 
+    // Auth via POST (id_token in body, not URL, so it isn't logged).
+    if (params.action === 'google_auth') {
+      return handleGoogleAuth_(e);
+    }
+
     // Otherwise, treat as Stripe webhook (JSON body with .type)
     return handleWebhook(e);
 
@@ -53,14 +58,10 @@ function doGet(e) {
     return handleAdminRequest_(e);
   }
 
-  // Auth endpoint for admin login (legacy Session-based — kept for back-compat)
-  if (action === 'auth') {
-    return handleAdminAuth_(e);
-  }
-
   // Google Identity Services (GSI) auth: client posts an ID token, we verify
-  // it and issue our signed admin token. This works across consumer Gmail
-  // accounts, unlike Session.getActiveUser().
+  // it and issue our signed admin token. The frontend uses POST in normal
+  // operation (so the token doesn't end up in URL/history), but the GET
+  // route is left in place as a fallback.
   if (action === 'google_auth') {
     return handleGoogleAuth_(e);
   }
@@ -94,17 +95,22 @@ function handleFormSubmission_(e) {
     }
   }
 
+  // Sanitize every free-text field so a malicious signup can't smuggle a
+  // formula (=, +, @, -, leading tab/CR) into the sheet that would execute
+  // when an admin opens the cell. Email/plan are not sanitized because
+  // they're validated against a whitelist below; tos_agreed and the
+  // install date are not free text.
   var email = String(p.email).trim().toLowerCase();
-  var fullName = String(p.full_name).trim();
-  var phone = String(p.phone || '').trim();
-  var address = String(p.address || '').trim();
-  var city = String(p.city || 'Nenana').trim();
-  var state = String(p.state || 'AK').trim();
-  var zip = String(p.zip || '').trim();
+  var fullName = sanitizeForSheet_(String(p.full_name).trim());
+  var phone = sanitizeForSheet_(String(p.phone || '').trim());
+  var address = sanitizeForSheet_(String(p.address || '').trim());
+  var city = sanitizeForSheet_(String(p.city || 'Nenana').trim());
+  var state = sanitizeForSheet_(String(p.state || 'AK').trim());
+  var zip = sanitizeForSheet_(String(p.zip || '').trim());
   var plan = String(p.plan).trim();
-  var contactPref = String(p.contact_pref || '').trim();
-  var contactMethod = String(p.contact_method || '').trim();
-  var notes = String(p.notes || '').trim();
+  var contactPref = sanitizeForSheet_(String(p.contact_pref || '').trim());
+  var contactMethod = sanitizeForSheet_(String(p.contact_method || '').trim());
+  var notes = sanitizeForSheet_(String(p.notes || '').trim());
   var tosAgreed = String(p.tos_agreed || 'false').trim();
   // 'YYYY-MM-DD' or 'ASAP'. Validation is light: tech reviews every request.
   var requestedInstallDate = String(p.requested_install_date || 'ASAP').trim();
@@ -222,4 +228,19 @@ function sanitize_(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Defang spreadsheet formula prefixes on user-supplied strings so they don't
+ * execute as formulas when an admin opens the cell. Sheets treats any cell
+ * starting with =, +, @, -, or a leading tab/CR as a formula. Prefixing
+ * with a single quote forces it to be plain text without altering display.
+ */
+function sanitizeForSheet_(val) {
+  if (val === null || val === undefined) return '';
+  var s = String(val);
+  if (/^[=+@\-\t\r]/.test(s)) {
+    return "'" + s;
+  }
+  return s;
 }

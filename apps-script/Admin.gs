@@ -1,15 +1,19 @@
 /**
- * Admin.gs -- Admin API endpoints with Google OAuth authentication
+ * Admin.gs -- Admin API endpoints with Google Identity Services auth.
  * NenanaWISP Billing Platform
  *
  * Authentication flow:
  * 1. Admin visits /admin/ page on GitHub Pages
- * 2. Page redirects to Apps Script URL with ?action=auth
- * 3. Apps Script checks Session.getActiveUser() against ADMIN_EMAILS
- * 4. If authorized, returns a signed token (HMAC-SHA256)
- * 5. Admin portal stores token in sessionStorage
- * 6. All subsequent API calls include token as ?token=...
- * 7. Apps Script validates token signature and expiry on every request
+ * 2. Frontend renders Google Sign-In button via the GSI library
+ * 3. User picks an account; GSI returns a JWT ID token
+ * 4. Frontend POSTs the ID token to ?action=google_auth
+ * 5. Backend verifies the token via Google's tokeninfo endpoint, checks
+ *    audience and email_verified, and confirms email is in ADMIN_EMAILS
+ * 6. Backend returns a signed admin token (HMAC-SHA256, 8hr expiry)
+ * 7. Frontend stores the admin token in sessionStorage
+ * 8. All subsequent API calls include the admin token as ?token=...
+ * 9. validateAdminToken_ checks signature, expiry, and re-checks ADMIN_EMAILS
+ *    on every request, so revoking access via Script Property is immediate.
  */
 
 // ── Token Configuration ────────────────────────────────────
@@ -19,37 +23,9 @@ var TOKEN_EXPIRY_HOURS = 8;
 // ── Auth Endpoint ──────────────────────────────────────────
 
 /**
- * Handle admin authentication.
- * Called via doGet with ?action=auth
- * If the user is in ADMIN_EMAILS, generates a signed token and redirects back to the admin page.
- */
-function handleAdminAuth_(e) {
-  var user = Session.getActiveUser().getEmail();
-  var adminEmails = propOr('ADMIN_EMAILS', '').split(',').map(function(e) { return e.trim().toLowerCase(); });
-  var redirectUrl = e.parameter.redirect || '';
-
-  if (!user || adminEmails.indexOf(user.toLowerCase()) === -1) {
-    return HtmlService.createHtmlOutput(
-      '<html><body>' +
-      '<h2>Access Denied</h2>' +
-      '<p>Your Google account (' + sanitize_(user || 'unknown') + ') is not authorized to access the admin portal.</p>' +
-      '<p>Contact the system administrator to request access.</p>' +
-      '</body></html>'
-    ).setTitle('Access Denied');
-  }
-
-  // Generate signed token
-  var token = generateAdminToken_(user);
-
-  return handleAdminAuthRedirect_(token, e);
-}
-
-/**
  * Verify a Google ID token (JWT) from Google Identity Services on the
  * client, then issue our own signed admin token if the email is in
- * ADMIN_EMAILS. This is the replacement for handleAdminAuth_ now that
- * Session.getActiveUser().getEmail() does not return consumer Gmail
- * addresses across accounts.
+ * ADMIN_EMAILS.
  *
  * Expected params:
  *   id_token -- the JWT credential returned by google.accounts.id
@@ -112,41 +88,6 @@ function handleGoogleAuth_(e) {
 function jsonResponse_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * Legacy redirect helper -- only reachable via the old ?action=auth flow.
- * Kept so existing bookmarks don't break while admins migrate to GSI.
- */
-function handleAdminAuthRedirect_(token, e) {
-  var redirectUrl = e.parameter.redirect || '';
-
-  // Redirect back to admin page with token.
-  // Apps Script HtmlService runs inside a sandboxed iframe, so a plain
-  // window.location.href only navigates the iframe -- the user appears
-  // "stuck" at script.google.com. Use window.top.location.href to navigate
-  // the parent frame back to nnabroadband.com, with a visible link as
-  // a manual fallback if the browser blocks the script.
-  if (redirectUrl) {
-    var safeUrl = sanitize_(redirectUrl) + '#token=' + token;
-    return HtmlService.createHtmlOutput(
-      '<!DOCTYPE html><html><head>' +
-      '<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;text-align:center;padding:48px;color:#1f2937;}a{color:#1a5276;font-weight:600;}</style>' +
-      '<script>' +
-      'var t = ' + JSON.stringify(safeUrl) + ';' +
-      'try { (window.top || window).location.href = t; } catch (e) { window.location.href = t; }' +
-      '</script>' +
-      '</head><body>' +
-      '<p>Signing you in...</p>' +
-      '<p style="margin-top:16px;"><a href="' + safeUrl + '" target="_top">Click here if you are not redirected automatically</a></p>' +
-      '</body></html>'
-    );
-  }
-
-  // If no redirect URL, return the token as JSON
-  return ContentService.createTextOutput(
-    JSON.stringify({ token: token, expires_in: TOKEN_EXPIRY_HOURS * 3600 })
-  ).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── Token Management ───────────────────────────────────────
@@ -558,17 +499,17 @@ function updateInstall_(params) {
   if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
 
   var sheet = getSheet_(TAB_INSTALLS);
-  if (params.scheduled_date) sheet.getRange(rowNum, 6).setValue(params.scheduled_date);
-  if (params.technician) sheet.getRange(rowNum, 7).setValue(params.technician);
-  if (params.equipment) sheet.getRange(rowNum, 8).setValue(params.equipment);
-  if (params.status) sheet.getRange(rowNum, 9).setValue(params.status);
-  if (params.completion_date) sheet.getRange(rowNum, 10).setValue(params.completion_date);
-  if (params.notes) sheet.getRange(rowNum, 11).setValue(params.notes);
+  if (params.scheduled_date) sheet.getRange(rowNum, I_.SCHEDULED_DATE).setValue(params.scheduled_date);
+  if (params.technician) sheet.getRange(rowNum, I_.TECHNICIAN).setValue(params.technician);
+  if (params.equipment) sheet.getRange(rowNum, I_.EQUIPMENT).setValue(params.equipment);
+  if (params.status) sheet.getRange(rowNum, I_.STATUS).setValue(params.status);
+  if (params.completion_date) sheet.getRange(rowNum, I_.COMPLETION_DATE).setValue(params.completion_date);
+  if (params.notes) sheet.getRange(rowNum, I_.NOTES).setValue(params.notes);
 
   // When install is marked "Completed", end the Stripe trial to start billing
   if (params.status === 'Completed') {
     try {
-      var email = sheet.getRange(rowNum, 2).getValue(); // Email column
+      var email = sheet.getRange(rowNum, I_.EMAIL).getValue();
       var customerRow = findRow_(TAB_CUSTOMERS, C_.EMAIL, String(email).toLowerCase());
       if (customerRow) {
         var custData = readRow_(TAB_CUSTOMERS, customerRow, CUSTOMERS_HEADERS.length);
@@ -602,10 +543,10 @@ function updateSupportTicket_(params) {
   if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
 
   var sheet = getSheet_(TAB_SUPPORT);
-  if (params.status) sheet.getRange(rowNum, 7).setValue(params.status);
-  if (params.resolution) sheet.getRange(rowNum, 8).setValue(params.resolution);
-  if (params.resolved_date) sheet.getRange(rowNum, 9).setValue(params.resolved_date);
-  if (params.notes) sheet.getRange(rowNum, 10).setValue(params.notes);
+  if (params.status) sheet.getRange(rowNum, S_.STATUS).setValue(params.status);
+  if (params.resolution) sheet.getRange(rowNum, S_.RESOLUTION).setValue(params.resolution);
+  if (params.resolved_date) sheet.getRange(rowNum, S_.RESOLVED_DATE).setValue(params.resolved_date);
+  if (params.notes) sheet.getRange(rowNum, S_.NOTES).setValue(params.notes);
 
   return { success: true };
 }
@@ -643,16 +584,16 @@ function updateEquipment_(params) {
   if (!rowNum || rowNum < 2) return { error: 'invalid_row' };
 
   var sheet = getSheet_(TAB_EQUIPMENT);
-  if (params.device_type) sheet.getRange(rowNum, 1).setValue(params.device_type);
-  if (params.make_model) sheet.getRange(rowNum, 2).setValue(params.make_model);
-  if (params.serial) sheet.getRange(rowNum, 3).setValue(params.serial);
-  if (params.mac) sheet.getRange(rowNum, 4).setValue(params.mac);
-  if (params.ip) sheet.getRange(rowNum, 5).setValue(params.ip);
-  if (params.vlan) sheet.getRange(rowNum, 6).setValue(params.vlan);
-  if (params.hasOwnProperty('assigned_to')) sheet.getRange(rowNum, 7).setValue(params.assigned_to);
-  if (params.location) sheet.getRange(rowNum, 9).setValue(params.location);
-  if (params.status) sheet.getRange(rowNum, 10).setValue(params.status);
-  if (params.hasOwnProperty('notes')) sheet.getRange(rowNum, 11).setValue(params.notes);
+  if (params.device_type) sheet.getRange(rowNum, EQ_.DEVICE_TYPE).setValue(params.device_type);
+  if (params.make_model) sheet.getRange(rowNum, EQ_.MAKE_MODEL).setValue(params.make_model);
+  if (params.serial) sheet.getRange(rowNum, EQ_.SERIAL).setValue(params.serial);
+  if (params.mac) sheet.getRange(rowNum, EQ_.MAC).setValue(params.mac);
+  if (params.ip) sheet.getRange(rowNum, EQ_.IP).setValue(params.ip);
+  if (params.vlan) sheet.getRange(rowNum, EQ_.VLAN).setValue(params.vlan);
+  if (params.hasOwnProperty('assigned_to')) sheet.getRange(rowNum, EQ_.ASSIGNED_TO).setValue(params.assigned_to);
+  if (params.location) sheet.getRange(rowNum, EQ_.LOCATION).setValue(params.location);
+  if (params.status) sheet.getRange(rowNum, EQ_.STATUS).setValue(params.status);
+  if (params.hasOwnProperty('notes')) sheet.getRange(rowNum, EQ_.NOTES).setValue(params.notes);
 
   return { success: true };
 }
@@ -1050,7 +991,9 @@ function getCustomerPayments_(params) {
   if (!custId) return { error: 'missing_id' };
 
   try {
-    var data = stripeGet_('/v1/invoices?customer=' + encodeURIComponent(custId) + '&limit=20');
+    // Stripe's max per page is 100. For ~100 customers paying monthly, this
+    // covers ~8 years of history -- more than enough without paginating.
+    var data = stripeGet_('/v1/invoices?customer=' + encodeURIComponent(custId) + '&limit=100');
     var invoices = (data.data || []).map(function(inv) {
       var st = inv.status_transitions || {};
       return {
@@ -1334,9 +1277,11 @@ function markInvoicePaid_(params) {
  * Return reader status (online/offline) and basic info for the UI.
  */
 function adminReaderStatus_() {
+  var mode = getStripeMode_();
   try {
     var reader = getReaderInfo_();
     return {
+      mode: mode,                          // 'test' or 'live' -- drives admin TEST MODE banner
       configured: true,
       id: reader.id,
       label: reader.label || '',
@@ -1348,7 +1293,7 @@ function adminReaderStatus_() {
   } catch (e) {
     Logger.log('adminReaderStatus error: ' + e.message);
     // Most common cause is TERMINAL_READER_ID not set yet.
-    return { configured: false, error: 'reader_error', message: e.message };
+    return { mode: mode, configured: false, error: 'reader_error', message: e.message };
   }
 }
 
@@ -1838,14 +1783,22 @@ function adminCompleteInstall_(params) {
     sheet.getRange(rowNum, L.STRIPE_CUST_ID).setValue(customer.id);
     sheet.getRange(rowNum, L.CHECKOUT_LINK).setValue(session.url);
     sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Awaiting Payment');
-
-    sendInstallCompleteEmail_(email, name, plan, session.url);
-
-    return { ok: true, status: 'Awaiting Payment', checkout_url: session.url };
   } catch (err) {
+    // Stripe / sheet write failed -- do not flip status so the operator
+    // can retry. Surface the underlying error.
     Logger.log('adminCompleteInstall error: ' + err.message + '\n' + err.stack);
     return { error: 'stripe_error', message: err.message };
   }
+
+  // Email is best-effort once the Stripe + sheet state is correct. If it
+  // fails the operator can resend the link manually from the lead row.
+  try {
+    sendInstallCompleteEmail_(email, name, plan, session.url);
+  } catch (emailErr) {
+    Logger.log('Install-complete email failed (non-critical): ' + emailErr.message);
+  }
+
+  return { ok: true, status: 'Awaiting Payment', checkout_url: session.url };
 }
 
 /**
