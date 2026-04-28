@@ -110,28 +110,35 @@ Optional properties:
 
 ---
 
-### Step 4: Configure Stripe Webhook
+### Step 4: Configure Stripe Webhook (via Cloudflare Worker relay)
 
-Apps Script web apps cannot read arbitrary HTTP headers, so we authenticate
-incoming webhooks via a URL-query secret instead of Stripe's HMAC signature.
+Stripe webhooks cannot be delivered directly to an Apps Script web app:
+Apps Script always responds with a 302 redirect to a one-time-use URL on
+`script.googleusercontent.com`, and Stripe preserves POST through the
+redirect, which `googleusercontent.com` rejects with a 404. To work around
+this, deliver Stripe webhooks to a tiny Cloudflare Worker that relays them
+to Apps Script with the redirect handled correctly.
 
 1. Pick a long random string for `WEBHOOK_URL_SECRET` (e.g., from random.org,
-   32+ chars). Add it to Script Properties.
-2. In Stripe Dashboard, go to **Developers > Webhooks**
-3. Click **+ Add endpoint**
-4. Paste your Apps Script web app URL (from Step 3.7) **with the secret
-   appended as a query parameter**:
-   `https://script.google.com/macros/s/.../exec?secret=YOUR_WEBHOOK_URL_SECRET`
+   32+ chars). Add it as a **Script Property** in Apps Script.
+2. Set up the Cloudflare Worker by following
+   [`cloudflare-worker/README.md`](cloudflare-worker/README.md). You'll
+   end up with a Worker URL like
+   `https://nna-stripe-relay.<subdomain>.workers.dev`.
+3. In Stripe Dashboard, go to **Developers > Webhooks** → **+ Add endpoint**.
+4. Set the endpoint URL to your Worker URL plus the same secret:
+   `https://nna-stripe-relay.<subdomain>.workers.dev?secret=YOUR_WEBHOOK_URL_SECRET`
 5. Select these events:
    - `checkout.session.completed`
    - `invoice.paid`
    - `invoice.payment_failed`
    - `customer.subscription.deleted`
    - `customer.subscription.updated`
-6. Click **Add endpoint**
+6. Click **Add endpoint**.
 
-If `WEBHOOK_URL_SECRET` is not set, all incoming webhooks are rejected with
-`webhook auth not configured` to prevent accidentally going live unauthenticated.
+If `WEBHOOK_URL_SECRET` is not set in Apps Script, all incoming webhooks
+are rejected with `webhook auth not configured` to prevent accidentally
+going live unauthenticated.
 
 ---
 
