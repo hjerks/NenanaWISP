@@ -1731,6 +1731,18 @@ function adminApproveSurvey_(params) {
   sheet.getRange(rowNum, L.LEAD_STATUS).setValue('Survey Approved');
   sheet.getRange(rowNum, L.REQUESTED_INSTALL_DATE).setValue(scheduledDate);
 
+  // Surface this install on the Installs tab/calendar immediately so the
+  // tech can see it on the schedule. If a row already exists for this
+  // email (re-approval, edge case), update it in place rather than dupe.
+  var existingInstall = findInstallRowByEmail_(email);
+  if (existingInstall) {
+    var insSheet = getSheet_(TAB_INSTALLS);
+    insSheet.getRange(existingInstall, I_.SCHEDULED_DATE).setValue(scheduledDate);
+    insSheet.getRange(existingInstall, I_.STATUS).setValue('Scheduled');
+  } else {
+    createInstallFromLead_(rowNum, 'Scheduled');
+  }
+
   try {
     sendSurveyApprovedEmail_(email, name, plan, scheduledDate, String(params.message || ''));
   } catch (err) {

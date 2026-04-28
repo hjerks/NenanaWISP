@@ -175,9 +175,20 @@ function handleCheckoutCompleted_(session) {
     Logger.log('Portal link generation failed: ' + portalErr.message);
   }
 
-  // Create install row. In the new flow the install was already done
-  // before payment, so mark it Completed up front.
-  createInstallFromLead_(leadRow, installAlreadyComplete);
+  // Install row: if survey approval already created one, update its status
+  // in place; otherwise create from scratch. installAlreadyComplete is true
+  // when the lead was in "Awaiting Payment" (survey-first flow), false for
+  // legacy leads that paid before install.
+  var existingInstall = findInstallRowByEmail_(email);
+  if (existingInstall) {
+    if (installAlreadyComplete) {
+      var insSheet = getSheet_(TAB_INSTALLS);
+      insSheet.getRange(existingInstall, I_.STATUS).setValue('Completed');
+      insSheet.getRange(existingInstall, I_.COMPLETION_DATE).setValue(new Date());
+    }
+  } else {
+    createInstallFromLead_(leadRow, installAlreadyComplete ? 'Completed' : 'Pending');
+  }
 
   // Send welcome email
   var leadData = readRow_(TAB_LEADS, leadRow, LEADS_HEADERS.length);

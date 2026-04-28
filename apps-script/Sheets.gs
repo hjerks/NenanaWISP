@@ -382,13 +382,13 @@ function createCustomerFromLead_(leadRowNum, stripeSubId, subStatus) {
  * row as "Completed" (with today as the completion date and the lead's
  * confirmed install date as the scheduled date) instead of "Pending".
  */
-function createInstallFromLead_(leadRowNum, alreadyComplete) {
+function createInstallFromLead_(leadRowNum, status) {
   var leadData = readRow_(TAB_LEADS, leadRowNum, LEADS_HEADERS.length);
   var requestedDate = leadData[L.REQUESTED_INSTALL_DATE - 1];
   var scheduled = (requestedDate && String(requestedDate).toUpperCase() !== 'ASAP') ? requestedDate : '';
 
-  var status = alreadyComplete ? 'Completed' : 'Pending';
-  var completionDate = alreadyComplete ? new Date() : '';
+  status = status || 'Pending';
+  var completionDate = (status === 'Completed') ? new Date() : '';
   var installRow = [
     leadData[L.FULL_NAME - 1],        // Customer Name
     leadData[L.EMAIL - 1],            // Email
@@ -404,6 +404,16 @@ function createInstallFromLead_(leadRowNum, alreadyComplete) {
   ];
 
   return appendRow_(TAB_INSTALLS, installRow);
+}
+
+/**
+ * Find an existing install row by the customer's email. Returns the 1-based
+ * row number, or null if no row exists. Email is the de-facto unique key on
+ * the Installs tab (no row_key column).
+ */
+function findInstallRowByEmail_(email) {
+  if (!email) return null;
+  return findRow_(TAB_INSTALLS, I_.EMAIL, String(email).toLowerCase());
 }
 
 // ── Support Tickets ────────────────────────────────────────
