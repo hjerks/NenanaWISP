@@ -337,16 +337,16 @@ function getAdminDashboard_() {
     }
   }
 
+  // "Pending Leads" = only raw inquiries that haven't been triaged yet.
+  // Once approved, the lead has an Install row and is counted under
+  // Pending Installs, so counting it here would double-count.
   var pendingLeads = leads.filter(function(l) {
-    var s = l['Lead Status'];
-    // Counts any lead that still needs tech action (new flow) or is awaiting
-    // the legacy payment path.
-    return s === 'Survey Requested' || s === 'Survey Approved' ||
-           s === 'Awaiting Payment' || s === 'Checkout Sent';
+    return l['Lead Status'] === 'Survey Requested';
   }).length;
 
   var pendingInstalls = installs.filter(function(inst) {
-    return inst['Status'] === 'Pending' || inst['Status'] === 'Scheduled';
+    var s = inst['Status'];
+    return s === 'Pending' || s === 'Scheduled' || s === 'In Progress';
   }).length;
 
   var openTickets = support.filter(function(t) {
