@@ -1123,10 +1123,61 @@ function rejectSurvey(rowNum) {
 }
 
 function completeInstall(rowNum, name) {
+  // Two paths: send checkout link via email, or capture card on file via
+  // the S700 reader. Both end in the same Stripe state (subscription with
+  // a 30-day trial), just differing in how the card was captured.
+  var existing = document.getElementById('install-choice-overlay');
+  if (existing) existing.remove();
+
+  var safeName = esc(name || 'this customer');
+  var readerOnline = (readerLastStatus === 'online');
+  var readerNote = readerOnline
+    ? 'Customer taps card on S700; trial begins immediately.'
+    : 'Reader is offline. Use email link instead.';
+
+  var html = '<div class="modal-overlay" id="install-choice-overlay">' +
+    '<div class="modal" style="max-width:460px;">' +
+    '<div class="modal-header"><h3>Mark Install Complete</h3>' +
+    '<button class="modal-close" id="ic-close">&times;</button></div>' +
+    '<div class="modal-body">' +
+    '<p style="margin:0 0 16px;">How would you like to take payment for <strong>' + safeName + '</strong>?</p>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<button class="btn btn-primary" id="ic-email" style="text-align:left;padding:14px;">' +
+      '<div style="font-weight:600;">Send Payment Link via Email</div>' +
+      '<div style="font-size:0.82rem;opacity:0.85;margin-top:4px;">Customer pays from their phone or laptop. 7 days to pay.</div>' +
+      '</button>' +
+    '<button class="btn btn-success" id="ic-reader" style="text-align:left;padding:14px;"' + (readerOnline ? '' : ' disabled') + '>' +
+      '<div style="font-weight:600;">Take Payment via Reader</div>' +
+      '<div style="font-size:0.82rem;opacity:0.85;margin-top:4px;">' + readerNote + '</div>' +
+      '</button>' +
+    '</div>' +
+    '<p style="font-size:0.82rem;color:#6b7280;margin-top:14px;">Both paths set up the same 30-day trial subscription. The card is captured but not charged until day 31.</p>' +
+    '</div></div></div>';
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  function close() {
+    var o = document.getElementById('install-choice-overlay');
+    if (o) o.remove();
+  }
+  document.getElementById('ic-close').addEventListener('click', close);
+  document.getElementById('ic-email').addEventListener('click', function() {
+    close();
+    completeInstallViaEmail(rowNum, name);
+  });
+  if (readerOnline) {
+    document.getElementById('ic-reader').addEventListener('click', function() {
+      close();
+      completeInstallViaReader(rowNum, name);
+    });
+  }
+}
+
+function completeInstallViaEmail(rowNum, name) {
   confirmModal({
-    title: 'Mark Install Complete for ' + (name || 'this customer') + '?',
-    message: 'This will create the Stripe customer, generate a payment link, and email it to the customer. They have 7 days to pay.',
-    confirmText: 'Send Payment Link',
+    title: 'Send Payment Link to ' + (name || 'customer') + '?',
+    message: 'A Stripe checkout link will be emailed to the customer. They have 7 days to pay.',
+    confirmText: 'Send Email',
     onConfirm: function(done) {
       apiCall('admin_complete_install', { row_num: rowNum }, function(err, res) {
         if (err || (res && res.error)) {
@@ -1137,6 +1188,196 @@ function completeInstall(rowNum, name) {
         done();
         loadView('leads');
       });
+    }
+  });
+}
+
+function completeInstallViaReader(rowNum, name) {
+  pushReaderInstallSetup({ rowNum: rowNum, name: name });
+}
+
+function pushReaderInstallSetup(opts) {
+  renderReaderModal({
+    state: 'sending',
+    label: opts.name || 'Install',
+    description: 'Saving card on file'
+  });
+
+  apiCall('admin_complete_install_reader', { row_num: opts.rowNum }, function(err, data) {
+    if (err || !data || !data.success) {
+      renderReaderModal({
+        state: 'error',
+        label: opts.name,
+        message: (data && (data.message || data.error)) || (err && err.message) || 'Failed to send to reader.'
+      });
+      return;
+    }
+
+    var setupIntentId = data.setupIntentId;
+    var pollOpts = {
+      label: opts.name,
+      description: 'Card on file (no charge today)',
+      onSuccess: function() {
+        renderReaderModal({
+          state: 'sending',
+          label: opts.name,
+          description: 'Activating subscription...'
+        });
+        apiCall('admin_complete_install_reader_finalize', {
+          setup_intent_id: setupIntentId
+        }, function(fErr, fData) {
+          if (fErr || !fData || !fData.success) {
+            renderReaderModal({
+              state: 'error',
+              label: opts.name,
+              message: 'Card captured but subscription setup failed: ' +
+                ((fData && (fData.message || fData.error)) || (fErr && fErr.message) || 'unknown')
+            });
+            return;
+          }
+          renderReaderModal({
+            state: 'success',
+            label: opts.name,
+            description: 'Card on file. First charge in 30 days.'
+          });
+          toast('success', 'Install complete -- ' + (opts.name || 'customer') + ' on a 30-day trial');
+          delete cachedData['admin_leads'];
+          delete cachedData['admin_customers'];
+          delete cachedData['admin_installs'];
+          delete cachedData['admin_dashboard'];
+        });
+      }
+    };
+
+    if (data.awaitingConfirm) {
+      renderReaderModal({
+        state: 'waiting_confirm',
+        label: opts.name,
+        description: pollOpts.description,
+        onCancel: function() { cancelReaderSetup(); }
+      });
+      pollReaderActionForSetup(setupIntentId, pollOpts);
+    } else {
+      renderReaderModal({
+        state: 'waiting',
+        label: opts.name,
+        description: pollOpts.description,
+        onCancel: function() { cancelReaderSetup(); }
+      });
+      pollSetupIntent(setupIntentId, pollOpts);
+    }
+  });
+}
+
+function pollReaderActionForSetup(setupIntentId, opts) {
+  var pollCount = 0;
+  var maxPolls = 180;
+  function poll() {
+    pollCount++;
+    apiCall('admin_reader_action_status', null, function(err, data) {
+      if (!document.getElementById('reader-modal-overlay')) return;
+      if (err || !data) {
+        if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 1000);
+        return;
+      }
+      if (data.selection === 'confirm') {
+        renderReaderModal({
+          state: 'waiting',
+          label: opts.label,
+          description: opts.description,
+          onCancel: function() { cancelReaderSetup(); }
+        });
+        apiCall('admin_reader_start_setup', { setup_intent_id: setupIntentId }, function(e2, d2) {
+          if (e2 || !d2 || !d2.success) {
+            renderReaderModal({
+              state: 'error',
+              label: opts.label,
+              message: (d2 && (d2.message || d2.error)) || (e2 && e2.message) || 'Could not start card capture.'
+            });
+            return;
+          }
+          pollSetupIntent(setupIntentId, opts);
+        });
+        return;
+      }
+      if (data.selection === 'cancel') {
+        cancelReaderSetup();
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          message: 'Customer canceled.'
+        });
+        return;
+      }
+      if (pollCount >= maxPolls) {
+        cancelReaderSetup();
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          message: 'Customer did not respond in time.'
+        });
+        return;
+      }
+      _readerPollTimeout = setTimeout(poll, 1000);
+    });
+  }
+  _readerPollTimeout = setTimeout(poll, 1000);
+}
+
+function pollSetupIntent(setupIntentId, opts) {
+  var pollCount = 0;
+  var maxPolls = 90;
+  function poll() {
+    pollCount++;
+    apiCall('admin_reader_setup_status', { setup_intent_id: setupIntentId }, function(err, data) {
+      if (!document.getElementById('reader-modal-overlay')) return;
+      if (err || !data) {
+        if (pollCount < maxPolls) _readerPollTimeout = setTimeout(poll, 2000);
+        return;
+      }
+      if (data.status === 'succeeded') {
+        if (typeof opts.onSuccess === 'function') opts.onSuccess();
+        return;
+      }
+      if (data.status === 'canceled') {
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          message: 'Card capture was canceled.'
+        });
+        return;
+      }
+      if (data.status === 'requires_payment_method' && data.lastError) {
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          message: data.lastError
+        });
+        return;
+      }
+      if (pollCount >= maxPolls) {
+        renderReaderModal({
+          state: 'error',
+          label: opts.label,
+          message: 'Timed out waiting for card. Check the reader and the Stripe dashboard.'
+        });
+        return;
+      }
+      _readerPollTimeout = setTimeout(poll, 2000);
+    });
+  }
+  _readerPollTimeout = setTimeout(poll, 2000);
+}
+
+function cancelReaderSetup() {
+  if (_readerPollTimeout) { clearTimeout(_readerPollTimeout); _readerPollTimeout = null; }
+  renderReaderModal({ state: 'canceling' });
+  apiCall('admin_reader_cancel', null, function(err, data) {
+    closeReaderModal();
+    if (err) {
+      toast('error', 'Cancel sent but got an error: ' + err.message);
+    } else {
+      toast('success', 'Reader canceled');
     }
   });
 }

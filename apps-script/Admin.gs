@@ -278,6 +278,18 @@ function handleAdminRequest_(e) {
     case 'admin_complete_install':
       result = adminCompleteInstall_(e.parameter);
       break;
+    case 'admin_complete_install_reader':
+      result = adminCompleteInstallReader_(e.parameter);
+      break;
+    case 'admin_complete_install_reader_finalize':
+      result = adminCompleteInstallReaderFinalize_(e.parameter);
+      break;
+    case 'admin_reader_start_setup':
+      result = adminReaderStartSetup_(e.parameter);
+      break;
+    case 'admin_reader_setup_status':
+      result = adminReaderSetupStatus_(e.parameter);
+      break;
     case 'admin_broadcast_preview':
       result = adminBroadcastPreview_();
       break;
@@ -1594,6 +1606,199 @@ function adminReaderPaymentStatus_(params) {
   } catch (e) {
     Logger.log('adminReaderPaymentStatus error: ' + e.message);
     return { error: 'stripe_error', message: e.message };
+  }
+}
+
+// ── Install Complete via Reader (alternate to email-link path) ────
+//
+// Flow:
+//  1. adminCompleteInstallReader_ -- creates the Stripe customer (or finds
+//     existing), creates a SetupIntent with usage=off_session and pushes
+//     a Confirm/Cancel prompt to the reader.
+//  2. Frontend polls admin_reader_action_status for the Confirm tap, then
+//     calls admin_reader_start_setup to fire process_setup_intent.
+//  3. Frontend polls admin_reader_setup_status until the SetupIntent
+//     succeeds (or fails).
+//  4. adminCompleteInstallReaderFinalize_ -- sets the captured card as the
+//     customer's default payment method, creates the subscription with
+//     a 30-day trial, promotes the lead to Customer + marks Install
+//     complete + sends welcome email.
+
+function adminCompleteInstallReader_(params) {
+  var rowNum = parseInt(params.row_num, 10);
+  if (!rowNum) return { error: 'missing_row_num' };
+
+  var sheet = getSheet_(TAB_LEADS);
+  var lead = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+  var email = String(lead[L.EMAIL - 1] || '').trim();
+  var name = String(lead[L.FULL_NAME - 1] || '').trim();
+  var phone = String(lead[L.PHONE - 1] || '').trim();
+  var address = String(lead[L.ADDRESS - 1] || '').trim();
+  var city = String(lead[L.CITY - 1] || '').trim();
+  var state = String(lead[L.STATE - 1] || '').trim();
+  var zip = String(lead[L.ZIP - 1] || '').trim();
+  var plan = String(lead[L.PLAN - 1] || '').trim();
+  var rowKey = String(lead[L.ROW_KEY - 1] || '').trim();
+  if (!email || !plan || !rowKey) {
+    return { error: 'lead_incomplete', message: 'lead is missing email/plan/row_key' };
+  }
+
+  try {
+    var customer = createOrGetStripeCustomer_({
+      email: email,
+      name: name,
+      phone: phone,
+      address: { line1: address, city: city, state: state, zip: zip }
+    });
+    var priceId = getPriceIdForPlan_(plan);
+
+    var result = setupIntentOnReader_({
+      customerId: customer.id,
+      planLabel: plan,
+      trialDays: 30,
+      metadata: {
+        source: 'admin_install_complete_reader',
+        lead_row_num: String(rowNum),
+        plan: plan,
+        price_id: priceId,
+        row_key: rowKey,
+        email: email
+      }
+    });
+
+    // Save the customer ID on the lead row immediately so it's recoverable
+    // if the finalize step fails after card capture.
+    sheet.getRange(rowNum, L.STRIPE_CUST_ID).setValue(customer.id);
+
+    return {
+      ok: true,
+      success: true,
+      setupIntentId: result.setupIntentId,
+      awaitingConfirm: !!result.awaitingConfirm,
+      readerAction: result.readerAction || null
+    };
+  } catch (err) {
+    Logger.log('adminCompleteInstallReader error: ' + err.message + '\n' + err.stack);
+    return { error: 'stripe_error', message: err.message };
+  }
+}
+
+function adminReaderStartSetup_(params) {
+  var siId = String(params.setup_intent_id || '').trim();
+  if (!siId) return { error: 'missing_setup_intent_id' };
+  try {
+    var result = startSetupIntentOnReader_(siId);
+    return { success: true, readerAction: result.action || null };
+  } catch (e) {
+    Logger.log('adminReaderStartSetup error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+function adminReaderSetupStatus_(params) {
+  var siId = String(params.setup_intent_id || '').trim();
+  if (!siId) return { error: 'missing_setup_intent_id' };
+  try {
+    var si = getSetupIntentStatus_(siId);
+    return {
+      id: si.id,
+      status: si.status,
+      paymentMethodId: si.payment_method || null,
+      lastError: si.last_setup_error ? si.last_setup_error.message : null
+    };
+  } catch (e) {
+    Logger.log('adminReaderSetupStatus error: ' + e.message);
+    return { error: 'stripe_error', message: e.message };
+  }
+}
+
+function adminCompleteInstallReaderFinalize_(params) {
+  var siId = String(params.setup_intent_id || '').trim();
+  if (!siId) return { error: 'missing_setup_intent_id' };
+
+  try {
+    var si = getSetupIntentStatus_(siId);
+    if (si.status !== 'succeeded') {
+      return { error: 'setup_intent_not_succeeded', status: si.status };
+    }
+
+    var customerId = si.customer;
+    var paymentMethodId = si.payment_method;
+    var meta = si.metadata || {};
+    var rowNum = parseInt(meta.lead_row_num, 10);
+    var plan = meta.plan || '';
+    var priceId = meta.price_id || '';
+    var rowKey = meta.row_key || '';
+    var email = meta.email || '';
+
+    if (!rowNum || !customerId || !paymentMethodId || !priceId) {
+      return { error: 'missing_metadata', message: 'SetupIntent is missing required metadata.' };
+    }
+
+    // Set the captured card as the default for both subscriptions and
+    // future invoices so the trial-end charge fires automatically.
+    stripeRequest_('/v1/customers/' + customerId, 'post', {
+      'invoice_settings[default_payment_method]': paymentMethodId
+    });
+
+    // Subscription with 30-day trial -- same shape as the checkout flow.
+    var sub = stripeRequest_('/v1/subscriptions', 'post', {
+      customer: customerId,
+      'items[0][price]': priceId,
+      trial_period_days: '30',
+      'default_payment_method': paymentMethodId,
+      'metadata[row_key]': rowKey,
+      'metadata[email]': email,
+      'metadata[plan]': plan
+    });
+
+    // Lead row updates -- mirror handleCheckoutCompleted_.
+    var leadSheet = getSheet_(TAB_LEADS);
+    leadSheet.getRange(rowNum, L.LEAD_STATUS).setValue('Paid');
+    leadSheet.getRange(rowNum, L.STRIPE_CUST_ID).setValue(customerId);
+
+    // Promote to Customer (or find existing if webhooks somehow fired).
+    var existingCustomerRow = findCustomerRow_(customerId, email);
+    var customerRowNum = existingCustomerRow
+      ? existingCustomerRow
+      : createCustomerFromLead_(rowNum, sub.id, 'active');
+
+    try {
+      var portalUrl = createPortalSession_(customerId);
+      writeCell_(TAB_CUSTOMERS, customerRowNum, C_.PORTAL_LINK, portalUrl);
+    } catch (portalErr) {
+      Logger.log('Portal link generation failed: ' + portalErr.message);
+    }
+
+    // Install row -- mark Completed (or create if missing for legacy data).
+    var existingInstall = findInstallRowByEmail_(email);
+    if (existingInstall) {
+      var insSheet = getSheet_(TAB_INSTALLS);
+      insSheet.getRange(existingInstall, I_.STATUS).setValue('Completed');
+      insSheet.getRange(existingInstall, I_.COMPLETION_DATE).setValue(new Date());
+    } else {
+      createInstallFromLead_(rowNum, 'Completed');
+    }
+
+    var leadData = readRow_(TAB_LEADS, rowNum, LEADS_HEADERS.length);
+    var fullName = String(leadData[L.FULL_NAME - 1] || '');
+    try {
+      var portalForEmail = createPortalSession_(customerId);
+      sendWelcomeEmail_(email, fullName, plan, portalForEmail);
+    } catch (emailErr) {
+      Logger.log('Welcome email failed: ' + emailErr.message);
+    }
+
+    return {
+      ok: true,
+      success: true,
+      status: 'Paid',
+      customer_id: customerId,
+      subscription_id: sub.id
+    };
+  } catch (err) {
+    Logger.log('adminCompleteInstallReaderFinalize error: ' + err.message + '\n' + err.stack);
+    return { error: 'finalize_error', message: err.message };
   }
 }
 

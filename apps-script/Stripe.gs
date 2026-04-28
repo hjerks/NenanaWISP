@@ -413,6 +413,96 @@ function getPaymentIntentStatus_(paymentIntentId) {
 }
 
 /**
+ * Capture a card on file via the Terminal reader -- no money moves, just
+ * saves the card as a PaymentMethod attached to the customer for future
+ * off-session charges (subscription trial-end, etc).
+ *
+ * Mirrors chargeOnReader_ but uses SetupIntent + process_setup_intent
+ * instead of PaymentIntent + process_payment_intent.
+ *
+ * opts: { customerId, planLabel?, trialDays?, metadata? }
+ * returns: { setupIntentId, awaitingConfirm, readerAction? }
+ */
+function setupIntentOnReader_(opts) {
+  var readerId = prop('TERMINAL_READER_ID');
+
+  var siPayload = {
+    customer: opts.customerId,
+    'payment_method_types[]': 'card_present',
+    usage: 'off_session'
+  };
+  if (opts.metadata) {
+    for (var k in opts.metadata) {
+      if (opts.metadata.hasOwnProperty(k)) {
+        siPayload['metadata[' + k + ']'] = opts.metadata[k];
+      }
+    }
+  }
+  var setupIntent = stripeRequest_('/v1/setup_intents', 'post', siPayload);
+
+  // Show a Confirm/Cancel prompt before tap-to-pay so the customer knows
+  // their card is being saved (no immediate charge). Mirrors the
+  // requireConfirm path on chargeOnReader_.
+  var trialDays = parseInt(opts.trialDays, 10) || 30;
+  var inputsPayload = {
+    'inputs[0][type]': 'selection',
+    'inputs[0][required]': 'true',
+    'inputs[0][custom_text][title]': 'Save Card on File',
+    'inputs[0][custom_text][description]':
+      (opts.planLabel ? opts.planLabel + '\n' : '') +
+      'No charge today. First charge in ' + trialDays + ' days.',
+    'inputs[0][selection][choices][0][style]': 'primary',
+    'inputs[0][selection][choices][0][id]': 'confirm',
+    'inputs[0][selection][choices][0][text]': 'Confirm',
+    'inputs[0][selection][choices][1][style]': 'secondary',
+    'inputs[0][selection][choices][1][id]': 'cancel',
+    'inputs[0][selection][choices][1][text]': 'Cancel'
+  };
+
+  try {
+    stripeRequest_(
+      '/v1/terminal/readers/' + readerId + '/collect_inputs',
+      'post',
+      inputsPayload
+    );
+    return { setupIntentId: setupIntent.id, awaitingConfirm: true };
+  } catch (inputErr) {
+    Logger.log('collect_inputs failed -- falling back to direct setup_intent: ' + inputErr.message);
+    var fallback = stripeRequest_(
+      '/v1/terminal/readers/' + readerId + '/process_setup_intent',
+      'post',
+      { setup_intent: setupIntent.id }
+    );
+    return {
+      setupIntentId: setupIntent.id,
+      readerAction: fallback.action || null,
+      awaitingConfirm: false
+    };
+  }
+}
+
+/**
+ * Fire process_setup_intent on a previously-created SetupIntent. Used
+ * after the customer hits Confirm on the reader.
+ */
+function startSetupIntentOnReader_(setupIntentId) {
+  var readerId = prop('TERMINAL_READER_ID');
+  return stripeRequest_(
+    '/v1/terminal/readers/' + readerId + '/process_setup_intent',
+    'post',
+    { setup_intent: setupIntentId }
+  );
+}
+
+/**
+ * Get the status of a SetupIntent by ID. Used by the frontend to poll
+ * after pushing the setup_intent to the reader.
+ */
+function getSetupIntentStatus_(setupIntentId) {
+  return stripeGet_('/v1/setup_intents/' + setupIntentId);
+}
+
+/**
  * Create a finalized one-off invoice for a specific Stripe product/price
  * and return the invoice object. The resulting invoice has a single line
  * item whose amount and description come from the Price on Stripe's side,
