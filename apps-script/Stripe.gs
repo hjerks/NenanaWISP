@@ -471,7 +471,10 @@ function setupIntentOnReader_(opts) {
     var fallback = stripeRequest_(
       '/v1/terminal/readers/' + readerId + '/process_setup_intent',
       'post',
-      { setup_intent: setupIntent.id }
+      {
+        setup_intent: setupIntent.id,
+        'process_config[allow_redisplay]': 'always'
+      }
     );
     return {
       setupIntentId: setupIntent.id,
@@ -484,13 +487,20 @@ function setupIntentOnReader_(opts) {
 /**
  * Fire process_setup_intent on a previously-created SetupIntent. Used
  * after the customer hits Confirm on the reader.
+ *
+ * `process_config[allow_redisplay]=always` is required by current Stripe
+ * API versions; it declares that the saved PaymentMethod can be shown
+ * back to the customer (e.g. "card on file" in their portal).
  */
 function startSetupIntentOnReader_(setupIntentId) {
   var readerId = prop('TERMINAL_READER_ID');
   return stripeRequest_(
     '/v1/terminal/readers/' + readerId + '/process_setup_intent',
     'post',
-    { setup_intent: setupIntentId }
+    {
+      setup_intent: setupIntentId,
+      'process_config[allow_redisplay]': 'always'
+    }
   );
 }
 
