@@ -363,6 +363,36 @@ function getAdminDashboard_() {
     return { id: c['Stripe Customer ID'], name: c['Full Name'], plan: c['Plan'], date: c['Signup Date'] };
   });
 
+  // Upcoming installs (today through next 7 days, status not Completed/Cancelled).
+  // Uses local date math: an install scheduled "today" is upcoming regardless of time-of-day.
+  var todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  var sevenDaysOut = new Date(todayStart.getTime());
+  sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
+  var upcomingInstalls = [];
+  for (var ii = 0; ii < installs.length; ii++) {
+    var inst = installs[ii];
+    var status = inst['Status'];
+    if (status === 'Completed' || status === 'Cancelled' || status === 'Canceled') continue;
+    var sd = inst['Scheduled Date'];
+    if (!sd) continue;
+    var schedDate = (sd instanceof Date) ? sd : new Date(sd);
+    if (isNaN(schedDate.getTime())) continue;
+    if (schedDate >= todayStart && schedDate < sevenDaysOut) {
+      upcomingInstalls.push({
+        customerName: inst['Customer Name'],
+        address: inst['Service Address'],
+        plan: inst['Plan'],
+        scheduledDate: sd,
+        technician: inst['Technician'],
+        status: status
+      });
+    }
+  }
+  upcomingInstalls.sort(function(a, b) {
+    return new Date(a.scheduledDate) - new Date(b.scheduledDate);
+  });
+
   return {
     summary: {
       activeSubscribers: activeCount,
@@ -375,7 +405,8 @@ function getAdminDashboard_() {
     },
     planBreakdown: planBreakdown,
     pastDueCustomers: pastDueCustomers,
-    recentSignups: recentSignups
+    recentSignups: recentSignups,
+    upcomingInstalls: upcomingInstalls
   };
 }
 

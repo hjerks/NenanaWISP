@@ -511,6 +511,28 @@ function loadDashboard(container) {
 
     html += '</div>'; // end two-col
 
+    // Upcoming installs (next 7 days)
+    var upcoming = data.upcomingInstalls || [];
+    html += '<div class="panel">';
+    html += '<div class="panel-header"><h2>Upcoming Installs (next 7 days)</h2></div>';
+    if (upcoming.length > 0) {
+      html += '<div class="panel-body no-pad"><table class="data-table">';
+      html += '<tr><th>Date</th><th>Customer</th><th>Address</th><th>Plan</th><th>Tech</th></tr>';
+      upcoming.forEach(function(inst) {
+        html += '<tr>';
+        html += '<td>' + formatDate(inst.scheduledDate) + '</td>';
+        html += '<td><strong>' + esc(inst.customerName) + '</strong></td>';
+        html += '<td>' + esc(inst.address) + '</td>';
+        html += '<td>' + esc(inst.plan) + '</td>';
+        html += '<td>' + esc(inst.technician || '') + '</td>';
+        html += '</tr>';
+      });
+      html += '</table></div>';
+    } else {
+      html += '<div class="panel-body"><div class="empty-state"><p>No installs scheduled in the next 7 days.</p></div></div>';
+    }
+    html += '</div>';
+
     // Plan breakdown
     if (data.planBreakdown) {
       html += '<div class="panel">';
@@ -1121,20 +1143,112 @@ function completeInstall(rowNum, name) {
 
 // ── Installs View ──────────────────────────────────────────
 
+var installsViewMode = 'calendar';
+var calendarMonth = (function() { var d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; })();
+
 function loadInstalls(container) {
   getCachedOrFetch('admin_installs', null, function(err, data) {
     if (err || !data) {
       container.innerHTML = '<div class="empty-state"><p>Failed to load installs.</p></div>';
       return;
     }
-    var html = '<div class="panel">';
-    html += '<div class="panel-header"><h2 id="installs-count">Installations</h2></div>';
-    html += renderFilterChips('installs', data.installs || [], function(r) { return r['Status']; });
-    html += '<div id="installs-table-wrap"></div>';
-    html += '</div>';
-    container.innerHTML = html;
-    refreshInstallsList();
+    container.innerHTML = '<div id="installs-content"></div>';
+    refreshInstallsView();
   });
+}
+
+function setInstallsView(mode) {
+  installsViewMode = mode;
+  refreshInstallsView();
+}
+
+function refreshInstallsView() {
+  var content = document.getElementById('installs-content');
+  if (!content) return;
+  var cached = cachedData['admin_installs'] && cachedData['admin_installs'].data;
+  var rows = (cached && cached.installs) || [];
+  var html = '<div class="panel">';
+  html += '<div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">';
+  html += '<h2 id="installs-count">Installations</h2>';
+  html += '<div class="btn-group">';
+  html += '<button class="btn btn-sm ' + (installsViewMode === 'calendar' ? 'btn-primary' : 'btn-outline') + '" onclick="setInstallsView(\'calendar\')">Calendar</button>';
+  html += '<button class="btn btn-sm ' + (installsViewMode === 'list' ? 'btn-primary' : 'btn-outline') + '" onclick="setInstallsView(\'list\')">List</button>';
+  html += '</div></div>';
+  if (installsViewMode === 'calendar') {
+    html += renderInstallsCalendar(rows);
+  } else {
+    html += renderFilterChips('installs', rows, function(r) { return r['Status']; });
+    html += '<div id="installs-table-wrap"></div>';
+  }
+  html += '</div>';
+  content.innerHTML = html;
+  if (installsViewMode === 'list') refreshInstallsList();
+}
+
+function navCalendar(dir) {
+  if (dir === 0) {
+    var n = new Date(); n.setDate(1); n.setHours(0,0,0,0);
+    calendarMonth = n;
+  } else {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + dir, 1);
+  }
+  refreshInstallsView();
+}
+
+function calDateKey(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  var m = String(d.getMonth() + 1), dd = String(d.getDate());
+  return d.getFullYear() + '-' + (m.length === 1 ? '0' + m : m) + '-' + (dd.length === 1 ? '0' + dd : dd);
+}
+
+function calParse(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  var m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
+  var t = new Date(val);
+  return isNaN(t.getTime()) ? null : t;
+}
+
+function renderInstallsCalendar(installs) {
+  var year = calendarMonth.getFullYear(), month = calendarMonth.getMonth();
+  var startDow = new Date(year, month, 1).getDay();
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  var byDate = {};
+  installs.forEach(function(inst) {
+    var d = calParse(inst['Scheduled Date']);
+    if (!d) return;
+    var k = calDateKey(d);
+    (byDate[k] = byDate[k] || []).push(inst);
+  });
+  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var html = '<div class="cal-controls">';
+  html += '<button class="btn btn-sm btn-outline" onclick="navCalendar(-1)">&laquo; Prev</button>';
+  html += '<button class="btn btn-sm btn-outline" onclick="navCalendar(0)">Today</button>';
+  html += '<button class="btn btn-sm btn-outline" onclick="navCalendar(1)">Next &raquo;</button>';
+  html += '<h3 class="cal-title">' + monthNames[month] + ' ' + year + '</h3>';
+  html += '</div><div class="cal-grid">';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(function(d) { html += '<div class="cal-dow">' + d + '</div>'; });
+  for (var i = 0; i < startDow; i++) html += '<div class="cal-cell cal-empty"></div>';
+  var todayKey = calDateKey(new Date());
+  for (var d = 1; d <= daysInMonth; d++) {
+    var key = calDateKey(new Date(year, month, d));
+    var dayInstalls = byDate[key] || [];
+    html += '<div class="cal-cell' + (key === todayKey ? ' cal-today' : '') + '">';
+    html += '<div class="cal-day-num">' + d + '</div>';
+    dayInstalls.forEach(function(inst) {
+      var status = String(inst['Status'] || 'pending').toLowerCase().replace(/\s+/g, '-');
+      html += '<div class="cal-install cal-install-' + esc(status) + '" onclick=\'editInstall(' + escAttr(JSON.stringify(inst)) + ')\' title="' + esc(inst['Customer Name'] + ' — ' + (inst['Plan'] || '')) + '">';
+      html += esc(inst['Customer Name']);
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  var totalCells = startDow + daysInMonth;
+  var trailing = (7 - (totalCells % 7)) % 7;
+  for (var j = 0; j < trailing; j++) html += '<div class="cal-cell cal-empty"></div>';
+  html += '</div>';
+  return html;
 }
 
 function refreshInstallsList() {

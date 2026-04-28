@@ -1157,3 +1157,75 @@ body {
     min-height: 360px;
   }
 }
+
+/* ── Install scheduler calendar ────────────────────────────── */
+.cal-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+}
+.cal-title {
+  margin: 0 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #e5e7eb;
+  border-top: 1px solid #e5e7eb;
+}
+.cal-dow {
+  background: #f9fafb;
+  text-align: center;
+  padding: 8px 4px;
+  font-weight: 600;
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cal-cell {
+  background: #fff;
+  min-height: 96px;
+  padding: 4px 4px 6px;
+  font-size: 12px;
+  overflow: hidden;
+}
+.cal-empty { background: #f9fafb; }
+.cal-today { background: #fef3c7; }
+.cal-day-num {
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.cal-install {
+  background: #dbeafe;
+  border-left: 3px solid #2563eb;
+  padding: 2px 6px;
+  margin: 2px 0;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.cal-install:hover { filter: brightness(0.95); }
+.cal-install-completed { background: #d1fae5; border-left-color: #16a34a; color: #065f46; }
+.cal-install-cancelled,
+.cal-install-canceled { background: #fee2e2; border-left-color: #dc2626; color: #7f1d1d; text-decoration: line-through; }
+.cal-install-scheduled { background: #ede9fe; border-left-color: #7c3aed; }
+
+@media (max-width: 760px) {
+  .cal-cell { min-height: 70px; padding: 2px; }
+  .cal-day-num { font-size: 11px; }
+  .cal-install { font-size: 10px; padding: 1px 4px; }
+  .cal-dow { font-size: 10px; padding: 6px 2px; }
+}
