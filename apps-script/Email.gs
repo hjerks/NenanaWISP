@@ -80,8 +80,7 @@ function sendCheckoutEmail_(email, name, checkoutUrl, portalUrl, planName) {
       '<a href="' + portalUrl + '" style="color:#2e86c1;">manage your account</a> ' +
       'at any time to update payment methods or view invoices.</p>'
       : '') +
-    '<p style="color:#374151;line-height:1.6;margin-top:20px;">After payment, we\'ll reach out to schedule your installation. ' +
-    'If you have any questions, just reply to this email.</p>';
+    '<p style="color:#374151;line-height:1.6;margin-top:20px;">If you have any questions, just reply to this email.</p>';
 
   MailApp.sendEmail({
     to: email,
@@ -109,12 +108,12 @@ function sendWelcomeEmail_(email, name, planName, portalUrl) {
     sanitize_(planName) + '</strong> subscription is now active. Welcome aboard!</p>' +
 
     '<div style="background-color:#f0f9ff;border-left:4px solid #2e86c1;padding:16px;margin:20px 0;border-radius:0 6px 6px 0;">' +
-    '<h3 style="margin:0 0 8px;color:#1a5276;">What happens next?</h3>' +
+    '<h3 style="margin:0 0 8px;color:#1a5276;">What to expect</h3>' +
     '<ul style="margin:0;padding:0 0 0 20px;color:#374151;line-height:1.8;">' +
-    '<li>We\'ll contact you to schedule your equipment installation</li>' +
-    '<li>Installation typically takes 1-2 hours</li>' +
-    '<li>Your card won\'t be charged until your installation is complete</li>' +
-    '<li>Monthly billing begins on your installation date</li>' +
+    '<li>Your equipment is installed and your service is active starting today</li>' +
+    '<li>Today is your monthly billing date &mdash; your card will be charged on this day each month</li>' +
+    '<li>You can update your card, view invoices, or cancel any time from <strong>Manage My Account</strong></li>' +
+    '<li>If you run into any service issues, reply to this email or give us a call</li>' +
     '</ul></div>' +
 
     (portalUrl ?
