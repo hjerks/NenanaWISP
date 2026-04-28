@@ -473,7 +473,8 @@ function setupIntentOnReader_(opts) {
       'post',
       {
         setup_intent: setupIntent.id,
-        'process_config[allow_redisplay]': 'always'
+        allow_redisplay: 'always',
+        customer_consent_collected: 'true'
       }
     );
     return {
@@ -488,9 +489,10 @@ function setupIntentOnReader_(opts) {
  * Fire process_setup_intent on a previously-created SetupIntent. Used
  * after the customer hits Confirm on the reader.
  *
- * `process_config[allow_redisplay]=always` is required by current Stripe
- * API versions; it declares that the saved PaymentMethod can be shown
- * back to the customer (e.g. "card on file" in their portal).
+ * `allow_redisplay=always` -- the saved card can be shown back to the
+ * customer (card-on-file in the portal). `customer_consent_collected=true`
+ * -- they consented to future off-session charges by tapping Confirm.
+ * Both are required top-level params on this endpoint.
  */
 function startSetupIntentOnReader_(setupIntentId) {
   var readerId = prop('TERMINAL_READER_ID');
@@ -499,7 +501,8 @@ function startSetupIntentOnReader_(setupIntentId) {
     'post',
     {
       setup_intent: setupIntentId,
-      'process_config[allow_redisplay]': 'always'
+      allow_redisplay: 'always',
+      customer_consent_collected: 'true'
     }
   );
 }
