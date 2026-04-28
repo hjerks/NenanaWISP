@@ -1238,8 +1238,14 @@ function renderInstallsCalendar(installs) {
     html += '<div class="cal-day-num">' + d + '</div>';
     dayInstalls.forEach(function(inst) {
       var status = String(inst['Status'] || 'pending').toLowerCase().replace(/\s+/g, '-');
-      html += '<div class="cal-install cal-install-' + esc(status) + '" onclick=\'editInstall(' + escAttr(JSON.stringify(inst)) + ')\' title="' + esc(inst['Customer Name'] + ' — ' + (inst['Plan'] || '')) + '">';
-      html += esc(inst['Customer Name']);
+      var fullAddr = String(inst['Service Address'] || '');
+      // Use just the street portion (before the first comma) on the pill;
+      // the full address goes in the tooltip and edit modal.
+      var street = fullAddr.split(',')[0].trim();
+      var tooltip = (inst['Customer Name'] || '') + (fullAddr ? ' — ' + fullAddr : '') + (inst['Plan'] ? ' — ' + inst['Plan'] : '');
+      html += '<div class="cal-install cal-install-' + esc(status) + '" onclick=\'editInstall(' + escAttr(JSON.stringify(inst)) + ')\' title="' + esc(tooltip) + '">';
+      html += '<div class="cal-install-name">' + esc(inst['Customer Name']) + '</div>';
+      if (street) html += '<div class="cal-install-addr">' + esc(street) + '</div>';
       html += '</div>';
     });
     html += '</div>';
@@ -1308,6 +1314,8 @@ function refreshInstallsList() {
 function editInstall(inst) {
   showModal('Edit Installation', [
     { label: 'Customer', type: 'static', value: inst['Customer Name'] },
+    { label: 'Address', type: 'static', value: inst['Service Address'] || '' },
+    { label: 'Plan', type: 'static', value: inst['Plan'] || '' },
     { label: 'Scheduled Date', key: 'scheduled_date', type: 'date', value: formatDateInput(inst['Scheduled Date']) },
     { label: 'Technician', key: 'technician', type: 'text', value: inst['Technician'] },
     { label: 'Equipment Assigned', key: 'equipment', type: 'text', value: inst['Equipment Assigned'] },
