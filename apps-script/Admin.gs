@@ -1717,13 +1717,42 @@ function adminCompleteInstallReaderFinalize_(params) {
   if (!siId) return { error: 'missing_setup_intent_id' };
 
   try {
-    var si = getSetupIntentStatus_(siId);
+    // Expand payment_method so we can see the generated_card. Cards captured
+    // via Terminal are card_present type and can't be charged off-session
+    // directly; Stripe also generates a companion card-type PaymentMethod
+    // (in card_present.generated_card) that CAN be charged off-session,
+    // and that's what we need on the subscription.
+    var si = stripeGet_('/v1/setup_intents/' + siId + '?expand[]=payment_method');
     if (si.status !== 'succeeded') {
       return { error: 'setup_intent_not_succeeded', status: si.status };
     }
 
     var customerId = si.customer;
-    var paymentMethodId = si.payment_method;
+    var pm = si.payment_method;
+    var paymentMethodId;
+    if (pm && typeof pm === 'object' && pm.type === 'card_present' &&
+        pm.card_present && pm.card_present.generated_card) {
+      paymentMethodId = pm.card_present.generated_card;
+    } else if (pm && typeof pm === 'object' && pm.id) {
+      paymentMethodId = pm.id;
+    } else {
+      paymentMethodId = pm;  // string fallback
+    }
+
+    // The generated_card is created unattached -- attach it explicitly so
+    // it can be set as the customer's default payment method. If it's
+    // somehow already attached, Stripe returns a benign error we ignore.
+    try {
+      stripeRequest_('/v1/payment_methods/' + paymentMethodId + '/attach', 'post', {
+        customer: customerId
+      });
+    } catch (attachErr) {
+      var msg = String(attachErr.message || '');
+      if (msg.indexOf('already attached') === -1 && msg.indexOf('already_attached') === -1) {
+        throw attachErr;
+      }
+    }
+
     var meta = si.metadata || {};
     var rowNum = parseInt(meta.lead_row_num, 10);
     var plan = meta.plan || '';
