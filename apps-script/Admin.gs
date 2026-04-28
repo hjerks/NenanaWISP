@@ -1717,26 +1717,56 @@ function adminCompleteInstallReaderFinalize_(params) {
   if (!siId) return { error: 'missing_setup_intent_id' };
 
   try {
-    // Expand payment_method so we can see the generated_card. Cards captured
-    // via Terminal are card_present type and can't be charged off-session
-    // directly; Stripe also generates a companion card-type PaymentMethod
-    // (in card_present.generated_card) that CAN be charged off-session,
-    // and that's what we need on the subscription.
-    var si = stripeGet_('/v1/setup_intents/' + siId + '?expand[]=payment_method');
+    // Cards captured via Terminal are payment_method.type='card_present',
+    // which CANNOT be saved to customers or charged off-session. Stripe
+    // creates a companion card-type PM (the "generated_card") that can do
+    // both. We have to find that ID across multiple possible Stripe
+    // response shapes (varies by API version).
+    var si = stripeGet_('/v1/setup_intents/' + siId + '?expand[]=payment_method&expand[]=latest_attempt');
     if (si.status !== 'succeeded') {
       return { error: 'setup_intent_not_succeeded', status: si.status };
     }
 
     var customerId = si.customer;
     var pm = si.payment_method;
-    var paymentMethodId;
-    if (pm && typeof pm === 'object' && pm.type === 'card_present' &&
-        pm.card_present && pm.card_present.generated_card) {
+    var paymentMethodId = null;
+
+    // Path 1: expanded payment_method.card_present.generated_card
+    if (pm && typeof pm === 'object' && pm.card_present && pm.card_present.generated_card) {
       paymentMethodId = pm.card_present.generated_card;
-    } else if (pm && typeof pm === 'object' && pm.id) {
-      paymentMethodId = pm.id;
-    } else {
-      paymentMethodId = pm;  // string fallback
+    }
+
+    // Path 2: latest_attempt.payment_method_details.card_present.generated_card
+    if (!paymentMethodId && si.latest_attempt &&
+        si.latest_attempt.payment_method_details &&
+        si.latest_attempt.payment_method_details.card_present &&
+        si.latest_attempt.payment_method_details.card_present.generated_card) {
+      paymentMethodId = si.latest_attempt.payment_method_details.card_present.generated_card;
+    }
+
+    // Path 3: fetch the PaymentMethod directly
+    if (!paymentMethodId) {
+      var pmId = (typeof pm === 'string') ? pm : (pm && pm.id);
+      if (pmId) {
+        try {
+          var pmFull = stripeGet_('/v1/payment_methods/' + pmId);
+          if (pmFull.card_present && pmFull.card_present.generated_card) {
+            paymentMethodId = pmFull.card_present.generated_card;
+          }
+        } catch (pmErr) {
+          Logger.log('PaymentMethod fetch failed: ' + pmErr.message);
+        }
+      }
+    }
+
+    if (!paymentMethodId) {
+      Logger.log('No generated_card on SetupIntent ' + siId + '. SI=' + JSON.stringify(si));
+      return {
+        error: 'no_generated_card',
+        message: 'Card was captured, but Stripe did not generate an off-session-usable card. ' +
+          'In Stripe Dashboard, go to Settings > Payments > Stripe Terminal and enable ' +
+          '"Allow saving cards for future use." Then try again.'
+      };
     }
 
     // The generated_card is created unattached -- attach it explicitly so
