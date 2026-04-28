@@ -473,8 +473,7 @@ function setupIntentOnReader_(opts) {
       'post',
       {
         setup_intent: setupIntent.id,
-        allow_redisplay: 'always',
-        customer_consent_collected: 'true'
+        allow_redisplay: 'always'
       }
     );
     return {
@@ -490,9 +489,8 @@ function setupIntentOnReader_(opts) {
  * after the customer hits Confirm on the reader.
  *
  * `allow_redisplay=always` -- the saved card can be shown back to the
- * customer (card-on-file in the portal). `customer_consent_collected=true`
- * -- they consented to future off-session charges by tapping Confirm.
- * Both are required top-level params on this endpoint.
+ * customer (card-on-file in the portal). Required top-level param on
+ * this endpoint as of API version 2026-03-25.
  */
 function startSetupIntentOnReader_(setupIntentId) {
   var readerId = prop('TERMINAL_READER_ID');
@@ -501,8 +499,7 @@ function startSetupIntentOnReader_(setupIntentId) {
     'post',
     {
       setup_intent: setupIntentId,
-      allow_redisplay: 'always',
-      customer_consent_collected: 'true'
+      allow_redisplay: 'always'
     }
   );
 }
