@@ -2281,15 +2281,16 @@ function deleteCustomer(custId, name) {
 
 function addCustomerManual() {
   showModal('Add New Customer', [
-    { label: 'Full Name', key: 'full_name', type: 'text', value: '' },
+    { label: 'First Name', key: 'first_name', type: 'text', value: '' },
+    { label: 'Last Name', key: 'last_name', type: 'text', value: '' },
     { label: 'Email', key: 'email', type: 'text', value: '' },
     { label: 'Phone', key: 'phone', type: 'text', value: '' },
     { label: 'Service Address', key: 'address', type: 'text', value: '' },
     { label: 'Plan', key: 'plan', type: 'select', value: '', options: PLAN_OPTIONS },
     { label: 'Notes', key: 'notes', type: 'textarea', value: '' }
   ], function(values) {
-    if (!values.full_name || !values.email || !values.plan) {
-      return showModalMessage('error', 'Name, email, and plan are required.');
+    if (!values.first_name || !values.last_name || !values.email || !values.plan) {
+      return showModalMessage('error', 'First name, last name, email, and plan are required.');
     }
     apiCall('admin_create_customer', values, function(err, data) {
       if (err || !data || !data.success) {

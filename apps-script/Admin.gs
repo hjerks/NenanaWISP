@@ -763,12 +763,18 @@ function unsuspendCustomer_(params) {
  * Creates Stripe customer + subscription, adds to sheet.
  */
 function createCustomerManual_(params) {
-  if (!params.full_name || !params.email || !params.plan) {
-    return { error: 'missing_fields', message: 'Name, email, and plan are required.' };
+  // Accept first_name + last_name (current admin form) or full_name (legacy).
+  var firstName = String(params.first_name || '').trim();
+  var lastName = String(params.last_name || '').trim();
+  var fullName = (firstName + ' ' + lastName).trim();
+  if (!fullName && params.full_name) {
+    fullName = String(params.full_name).trim();
+  }
+  if (!fullName || !params.email || !params.plan) {
+    return { error: 'missing_fields', message: 'First name, last name, email, and plan are required.' };
   }
 
   var email = String(params.email).trim().toLowerCase();
-  var fullName = String(params.full_name).trim();
   var phone = String(params.phone || '').trim();
   var address = String(params.address || '').trim();
   var plan = String(params.plan).trim();

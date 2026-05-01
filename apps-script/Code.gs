@@ -85,14 +85,19 @@ function doGet(e) {
 function handleFormSubmission_(e) {
   var p = e.parameter;
 
-  // Validate required fields
-  var required = ['full_name', 'email', 'plan'];
-  for (var i = 0; i < required.length; i++) {
-    if (!p[required[i]] || !String(p[required[i]]).trim()) {
-      return HtmlService.createHtmlOutput(
-        '<html><body><p>Missing required field: ' + sanitize_(required[i]) + '</p></body></html>'
-      );
-    }
+  // Name comes in as first_name + last_name (current form) or full_name
+  // (legacy/cached form). Combine into a single Full Name string so the
+  // existing sheet schema and downstream code paths are unchanged.
+  var firstName = String(p.first_name || '').trim();
+  var lastName = String(p.last_name || '').trim();
+  var combinedName = (firstName + ' ' + lastName).trim();
+  if (!combinedName && p.full_name) {
+    combinedName = String(p.full_name).trim();
+  }
+  if (!combinedName || !p.email || !String(p.email).trim() || !p.plan || !String(p.plan).trim()) {
+    return HtmlService.createHtmlOutput(
+      '<html><body><p>Missing required field (name, email, or plan).</p></body></html>'
+    );
   }
 
   // Sanitize every free-text field so a malicious signup can't smuggle a
@@ -101,7 +106,7 @@ function handleFormSubmission_(e) {
   // they're validated against a whitelist below; tos_agreed and the
   // install date are not free text.
   var email = String(p.email).trim().toLowerCase();
-  var fullName = sanitizeForSheet_(String(p.full_name).trim());
+  var fullName = sanitizeForSheet_(combinedName);
   var phone = sanitizeForSheet_(String(p.phone || '').trim());
   var address = sanitizeForSheet_(String(p.address || '').trim());
   var city = sanitizeForSheet_(String(p.city || 'Nenana').trim());

@@ -52,8 +52,11 @@ function validateStep1() {
   var valid = true;
   clearErrors();
 
-  var name = document.getElementById('full_name').value.trim();
-  if (!name) { showError('full_name', 'err-name'); valid = false; }
+  var firstName = document.getElementById('first_name').value.trim();
+  if (!firstName) { showError('first_name', 'err-first-name'); valid = false; }
+
+  var lastName = document.getElementById('last_name').value.trim();
+  if (!lastName) { showError('last_name', 'err-last-name'); valid = false; }
 
   var email = document.getElementById('email').value.trim();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
